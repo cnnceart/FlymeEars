@@ -179,9 +179,9 @@ public final class EncoSession implements EncoLink.Listener {
             Log.w(TAG, "session: 找不到设备对象，跳过弹窗");
             return;
         }
-        int left = Math.max(value.leftBattery, 0);
-        int right = Math.max(value.rightBattery, 0);
-        int box = Math.max(value.caseBattery, 0);
+        int left = value.leftBattery;
+        int right = value.rightBattery;
+        int box = value.caseBattery;
         Log.i(TAG, "session: 拉起原生弹窗 " + left + "/" + right + "/" + box);
         main.post(() -> PopupLauncher.show(context, device, left, right, box));
     }

@@ -75,10 +75,12 @@ public final class PopupLauncher {
 
             try {
                 Object modelInfo = buildModelInfo(loader, name);
-                Uri art = ArtProvider.uri(ArtProvider.CASE);
-                context.grantUriPermission(PACKAGE, art, Intent.FLAG_GRANT_READ_URI_PERMISSION);
-                context.grantUriPermission(PACKAGE, ArtProvider.uri(ArtProvider.PAIR),
-                        Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                try {
+                    Uri art = ArtProvider.uri(ArtProvider.CASE);
+                    context.grantUriPermission(PACKAGE, art, Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                } catch (Throwable ignored) {
+                    // Provider 已导出，授权失败不影响读取。
+                }
                 intent.putExtra("DIALOG_MODEL_INFO", (Parcelable) modelInfo);
                 intent.putExtra("NETWORK_ENABLE", true);
             } catch (Throwable error) {

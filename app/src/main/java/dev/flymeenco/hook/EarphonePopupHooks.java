@@ -1,10 +1,7 @@
 package dev.flymeenco.hook;
 
 import android.bluetooth.BluetoothDevice;
-import android.graphics.Bitmap;
-import android.graphics.BitmapFactory;
-import android.graphics.drawable.BitmapDrawable;
-import android.graphics.drawable.Drawable;
+import android.net.Uri;
 import android.util.Log;
 import android.view.View;
 import android.widget.ImageView;
@@ -13,6 +10,7 @@ import android.widget.TextView;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 
+import dev.flymeenco.popup.ArtProvider;
 import io.github.libxposed.api.XposedModule;
 
 /**
@@ -21,10 +19,14 @@ import io.github.libxposed.api.XposedModule;
  * <p>弹窗布局 {@code mzfp_device_connected_fragment} 有三张静态魅族产品图：
  * {@code iv_tws_box}（充电盒）、{@code iv_tws_left}、{@code iv_tws_right}。
  * 名称与充电盒图由 Intent 里的 {@code ModelInfoBean} 决定（见 {@code PopupLauncher}），
- * 这里只补左右单耳，避免显示魅族 PANDAER 耳机。
+ * 这里统一把三张图换成模块 {@link ArtProvider} 提供的图片。
  *
- * <p>注意：宿主进程不一定持有 {@code BLUETOOTH_CONNECT}，任何取设备名的操作都要容错，
- * 否则会抛 {@code SecurityException} 打断弹窗初始化。
+ * <p>注意两点：
+ * <ul>
+ *   <li>宿主进程没有 {@code BLUETOOTH_CONNECT}，取设备名必须容错；</li>
+ *   <li>宿主看不到本模块的包（Android 包可见性），所以不能读模块资源，
+ *       只能通过导出的 {@code content://} 取图。</li>
+ * </ul>
  */
 public final class EarphonePopupHooks {
 
@@ -60,12 +62,56 @@ public final class EarphonePopupHooks {
         if (root == null) {
             return;
         }
-        replace(root, "iv_tws_left", dev.flymeenco.R.raw.enco_bud_left);
-        replace(root, "iv_tws_right", dev.flymeenco.R.raw.enco_bud_right);
+        replace(root, "iv_tws_box", ArtProvider.CASE);
+        replace(root, "iv_tws_left", ArtProvider.BUD_LEFT);
+        replace(root, "iv_tws_right", ArtProvider.BUD_RIGHT);
+        hideMissingComponents(root, fragment);
         applyName(fragment);
     }
 
-    private static void replace(View root, String idName, int rawResource) {
+    /**
+     * 耳机在耳时充电盒不上报电量（MzfpDevice 里是 -1）。原生代码只会跳过绘制，
+     * 视图仍保留默认的 "100"，所以按数值把整行隐藏掉。
+     */
+    private static void hideMissingComponents(View root, Object fragment) {
+        try {
+            Class<?> type = fragment.getClass();
+            Object mzfpDevice = field(type, fragment, "mMzfpDevice");
+            if (mzfpDevice == null) {
+                return;
+            }
+            int box = (int) mzfpDevice.getClass().getMethod("getBoxBattery").invoke(mzfpDevice);
+            if (box < 0) {
+                hide(root, "box_charge_content");
+                hide(root, "iv_box_icon");
+            }
+            int left = (int) mzfpDevice.getClass().getMethod("getLeftBattery").invoke(mzfpDevice);
+            if (left < 0) {
+                hide(root, "left_charge_content");
+                hide(root, "iv_left_icon");
+            }
+            int right = (int) mzfpDevice.getClass().getMethod("getRightBattery").invoke(mzfpDevice);
+            if (right < 0) {
+                hide(root, "right_charge_content");
+                hide(root, "iv_right_icon");
+            }
+        } catch (Throwable error) {
+            Log.w(TAG, "popup hook: 隐藏缺失电量失败", error);
+        }
+    }
+
+    private static void hide(View root, String idName) {
+        int id = root.getResources().getIdentifier(idName, "id", "com.meizu.earphone");
+        if (id == 0) {
+            return;
+        }
+        View target = root.findViewById(id);
+        if (target != null) {
+            target.setVisibility(View.INVISIBLE);
+        }
+    }
+
+    private static void replace(View root, String idName, String artName) {
         int id = root.getResources().getIdentifier(idName, "id", "com.meizu.earphone");
         if (id == 0) {
             Log.i(TAG, "popup hook: 布局里没有 " + idName);
@@ -75,13 +121,17 @@ public final class EarphonePopupHooks {
         if (!(target instanceof ImageView icon)) {
             return;
         }
-        Drawable art = artwork(icon, rawResource);
-        if (art == null) {
-            return;
+        Uri uri = ArtProvider.uri(artName);
+        try {
+            icon.setScaleType(ImageView.ScaleType.FIT_CENTER);
+            icon.setImageURI(null);
+            icon.setImageURI(uri);
+            if (icon.getDrawable() == null) {
+                Log.w(TAG, "popup hook: " + idName + " 读取为空 " + uri);
+            }
+        } catch (Throwable error) {
+            Log.w(TAG, "popup hook: " + idName + " 设定失败 " + uri, error);
         }
-        // 单只耳机比原来的窄，保持等比并居中，避免被拉伸。
-        icon.setScaleType(ImageView.ScaleType.FIT_CENTER);
-        icon.setImageDrawable(art);
     }
 
     /** 名称优先来自 ModelInfoBean；这里只作为兜底，允许因权限不足而跳过。 */
@@ -115,18 +165,6 @@ public final class EarphonePopupHooks {
             return value == null ? bluetooth.getAddress() : value;
         }
         return null;
-    }
-
-    private static Drawable artwork(ImageView icon, int rawResource) {
-        try {
-            android.content.res.Resources resources = icon.getContext()
-                    .createPackageContext("dev.flymeenco", 0).getResources();
-            Bitmap bitmap = BitmapFactory.decodeStream(resources.openRawResource(rawResource));
-            return bitmap == null ? null : new BitmapDrawable(resources, bitmap);
-        } catch (Throwable error) {
-            Log.w(TAG, "popup hook: 取模块配图失败", error);
-            return null;
-        }
     }
 
     private static Object field(Class<?> type, Object target, String name)

@@ -88,6 +88,25 @@ MzfpBluetoothDialogFragment: onViewCreated
   名称必须由 `ModelInfoBean` 提供，Hook 只做配图。
 - 更新模块 APK 后需要重启作用域进程（`am force-stop com.meizu.earphone`）才会加载新代码。
 
+## 自动触发（已跑通）
+
+SystemUI 进程内的 `EncoSession` 监听音频输出设备，命中 OPPO/Enco 后自建 RFCOMM，
+拿到第一份电量就拉起弹窗；耳机断开即释放。实测链路：
+
+```text
+session: 连接 OPPO Enco X2（2C:4D:79:66:AE:74）
+session: 通过 SDP UUID 建链
+session: RFCOMM 已连接
+session: 特性上报 ID：01 02 03 04 08 0B F1 F2 F3
+session: 拉起原生弹窗 90/80/-1
+popup: 已唤起原生弹窗
+```
+
+耳机在耳时充电盒不上报电量，`-1` 会让原生视图保留默认的 "100"，
+因此 `EarphonePopupHooks` 会把对应的行与图标设为 `INVISIBLE`。
+
+![自动弹窗](popup-auto.png)
+
 ## 待解决
 
 | 项 | 方案 | 状态 |

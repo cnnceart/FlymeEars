@@ -23,7 +23,7 @@
         <provider
             android:name=".popup.ArtProvider"
             android:authorities="dev.flymeenco.art"
-            android:exported="false"
+            android:exported="true"
             android:grantUriPermissions="true" />
     </application>
 </manifest>
