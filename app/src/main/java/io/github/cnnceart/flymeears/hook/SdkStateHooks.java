@@ -53,6 +53,8 @@ public final class SdkStateHooks {
     private static volatile Object wrapperInstance;
     private static volatile Runnable wearListener;
     private static boolean debugReceiverReady;
+    private static long lastCardPush;
+    private static String lastCardSignature;
 
     private SdkStateHooks() {
     }
@@ -605,6 +607,17 @@ public final class SdkStateHooks {
         if (impl == null) {
             return;
         }
+        // 插件收到回调后会重新绑定服务，可能再次触发 registerCallback；这里做去抖。
+        long now = android.os.SystemClock.elapsedRealtime();
+        String signature = ModuleState.mode() + "/" + ModuleState.eq() + "/"
+                + ModuleState.wearLeft() + "/" + ModuleState.wearRight() + "/"
+                + ModuleState.inBoxLeft() + "/" + ModuleState.inBoxRight() + "/"
+                + ModuleState.left() + "/" + ModuleState.right() + "/" + ModuleState.box();
+        if (now - lastCardPush < 1500L && signature.equals(lastCardSignature)) {
+            return;
+        }
+        lastCardPush = now;
+        lastCardSignature = signature;
         try {
             Object callback = readField(impl, "bcmCallback");
             Object device = DeviceListHooks.injectedDevice();
