@@ -109,7 +109,7 @@ public final class DeviceDetailHooks {
         // 主动问一次当前状态，避免面板空白等待下一次推送。
         activity.sendBroadcast(new Intent(EncoIntents.ACTION_CYCLE)
                 .setPackage("com.android.systemui")
-                .putExtra("query_only", true));
+                .putExtra(EncoIntents.EXTRA_QUERY_ONLY, true));
     }
 
     private static void detach(Object instance) {

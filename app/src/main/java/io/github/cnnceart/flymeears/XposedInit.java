@@ -67,6 +67,12 @@ public final class XposedInit extends XposedModule {
                     }
                     return;
                 }
+                if (intent.getBooleanExtra(
+                        io.github.cnnceart.flymeears.EncoIntents.EXTRA_QUERY_ONLY, false)) {
+                    session.publishState();
+                    android.util.Log.i(TAG, "session: 详情页查询当前状态");
+                    return;
+                }
                 session.cycleMode();
                 android.util.Log.i(TAG, "session: 磁贴触发模式切换");
             }

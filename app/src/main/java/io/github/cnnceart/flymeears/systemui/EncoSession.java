@@ -148,6 +148,20 @@ public final class EncoSession implements EncoLink.Listener {
         link.requestMode(mode);
     }
 
+    /**
+     * 详情页刚打开时来问一次状态：只回推快照并刷新电量，不改变模式。
+     *
+     * <p>早期版本把这次询问当成「循环切换」处理，打开详情页会顺带切 ANC，
+     * 所以单独开一条只读通道。
+     */
+    public void publishState() {
+        EncoSnapshot value = snapshot;
+        if (value != null) {
+            broadcastState(value);
+        }
+        link.refresh();
+    }
+
     private void reconcile() {
         AudioManager audio = context.getSystemService(AudioManager.class);
         if (audio == null) {
