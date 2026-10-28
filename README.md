@@ -48,6 +48,7 @@ Flyme 的系统耳机组件只识别魅族自家耳机：
 |---|---|---|
 | `protocol/OppoWireCodec` | OPPO 私有帧编解码：握手、电量、ANC 读写、主动上报、分片/噪声容错 | 7 个单元测试对齐上游参考帧 |
 | `protocol/OppoWireConfig` | 型号映射（标准 / Air2 Pro 反向），按设备名选择 | 单元测试 |
+| `protocol/AncMapper` | 原始 ANC 值 ↔ Flyme 三态语义，含强度档位与固件特异性编码 | 单元测试 |
 | `bt/EncoLink` | RFCOMM 连接、初始查询、读循环、模式回读、状态广播 | 待真机 |
 | `bt/EncoSnapshot` | Flyme 语义状态（1 关闭 / 2 降噪 / 3 通透 + 三件套电量） | 待真机 |
 | `XposedInit` | libxposed 102 入口 + 三个目标包的类/方法探针 | 待真机 |
