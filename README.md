@@ -6,9 +6,22 @@
 > 状态：设备列表注入已真机验证（列表显示「OPPO Enco X2 / 已连接」）；
 > 原生连接弹窗、控制中心降噪磁贴已验证；详情页面板与扫描页发现进行中。
 >
-> 许可证：**GPL-3.0**（OPPO 协议与耳机渲染素材参考了同为 GPL-3.0 的 HyperEars / flyme-mod）。
+> 许可证：**GPL-3.0**（OPPO 协议实现与耳机渲染素材来自 GPL-3.0 的 HyperEars）。
 >
 > 说明：逆向笔记与架构文档（`docs/`）**不入库**，仅在本地保留，避免公开厂商私有实现细节。
+
+## 致谢
+
+本项目建立在别人的工作之上：
+
+- [HyperEars](https://github.com/silverpoetry/HyperEars)（GPL-3.0）—— OPPO Enco 私有 RFCOMM 协议实现与耳机渲染素材，本项目的协议层是它的 Java 移植
+- [flyme-mod](https://github.com/rikumi/flyme-mod)（MIT）—— 魅族耳机 SDK 的 Binder 通道用法参考
+- [MelodyCodecTweaker](https://github.com/Andrea-lyz/MelodyCodecTweaker)（Apache-2.0）—— 宿主注入与诊断结构参考
+- [LSPosed](https://github.com/LSPosed/LSPosed) / libxposed（Apache-2.0）—— 模块框架
+- 上游协议研究（经 HyperEars 转引）：[1812z/OppoPods](https://github.com/1812z/OppoPods)、[Star-ZER0/Pods-Protocol-Reverse-Engineering](https://github.com/Star-ZER0/Pods-Protocol-Reverse-Engineering)
+
+完整出处与许可说明见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+商标与产品名称仅用于兼容性描述，归各自权利人所有。
 
 
 ## 能力矩阵（真机验证）
