@@ -169,6 +169,8 @@ public final class EncoLink {
             stream.write(OppoWireCodec.QUERY_ANC_PACKET);
             stream.write(OppoWireCodec.packet(0x010F));
             stream.write(OppoWireCodec.packet(0x0109));
+            stream.write(OppoWireCodec.packet(0x0114));
+            stream.write(OppoWireCodec.packet(0x0123));
             stream.flush();
         } catch (IOException error) {
             log("刷新失败：" + error.getClass().getSimpleName());
@@ -314,6 +316,8 @@ public final class EncoLink {
         stream.write(OppoWireCodec.QUERY_ANC_PACKET);
         stream.write(OppoWireCodec.packet(0x010F));
         stream.write(OppoWireCodec.packet(0x0109));
+        stream.write(OppoWireCodec.packet(0x0114));
+        stream.write(OppoWireCodec.packet(0x0123));
         stream.flush();
     }
 
@@ -336,6 +340,17 @@ public final class EncoLink {
     private void handle(OppoWireCodec.Frame frame) {
         log("帧 cmd=0x" + String.format(java.util.Locale.ROOT, "%04X", frame.command())
                 + " payload=" + OppoWireCodec.hex(frame.payload()));
+        if (frame.command() == 0x8114 && frame.payload().length >= 2
+                && (frame.payload()[0] & 0xFF) == 0) {
+            int codec = frame.payload()[1] & 0xFF;
+            log("当前编码类型：" + codec);
+            publish(EncoSnapshot.builder(snapshot).codecType(codec).build());
+            return;
+        }
+        if (frame.command() == 0x8123) {
+            log("高清编码列表：" + OppoWireCodec.hex(frame.payload()));
+            return;
+        }
         if (frame.command() == 0x8112 && frame.payload().length >= 2) {
             parseMultiConnect(frame.payload());
             return;
