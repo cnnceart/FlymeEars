@@ -2,13 +2,15 @@ package dev.flymeenco.bt;
 
 import java.util.Locale;
 
+import dev.flymeenco.protocol.AncMapper;
+
 /** 一次耳机会话的可观察状态。Flyme 侧只依赖这里的数据，不直接碰协议。 */
 public final class EncoSnapshot {
 
     /** 与 Flyme 音量面板图标语义一致：1 = 关闭，2 = 降噪，3 = 通透。 */
-    public static final int MODE_OFF = 1;
-    public static final int MODE_ANC = 2;
-    public static final int MODE_TRANSPARENCY = 3;
+    public static final int MODE_OFF = AncMapper.MODE_OFF;
+    public static final int MODE_ANC = AncMapper.MODE_ANC;
+    public static final int MODE_TRANSPARENCY = AncMapper.MODE_TRANSPARENCY;
 
     public final String address;
     public final String name;
@@ -76,12 +78,7 @@ public final class EncoSnapshot {
     }
 
     public static String modeName(int mode) {
-        return switch (mode) {
-            case MODE_OFF -> "关闭";
-            case MODE_ANC -> "降噪";
-            case MODE_TRANSPARENCY -> "通透";
-            default -> "未知";
-        };
+        return AncMapper.modeName(mode);
     }
 
     public static final class Builder {

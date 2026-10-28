@@ -14,6 +14,7 @@ import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import dev.flymeenco.protocol.AncMapper;
 import dev.flymeenco.protocol.OppoWireCodec;
 import dev.flymeenco.protocol.OppoWireConfig;
 
@@ -86,12 +87,7 @@ public final class EncoLink {
             log("链路未就绪，无法切换模式");
             return;
         }
-        int primary = switch (flymeMode) {
-            case EncoSnapshot.MODE_OFF -> config.offPrimary();
-            case EncoSnapshot.MODE_ANC -> config.ancPrimary();
-            case EncoSnapshot.MODE_TRANSPARENCY -> OppoWireConfig.TRANSPARENCY_PRIMARY;
-            default -> -1;
-        };
+        int primary = AncMapper.toPrimary(flymeMode, config);
         if (primary < 0) {
             log("未知模式：" + flymeMode);
             return;
@@ -220,39 +216,11 @@ public final class EncoLink {
 
         OppoWireCodec.AncState anc = OppoWireCodec.parseAncState(frame);
         if (anc != null) {
-            int mode = toFlymeMode(anc);
-            if (mode > 0) {
+            int mode = AncMapper.toFlymeMode(anc, config);
+            if (mode != AncMapper.MODE_UNKNOWN) {
                 publish(EncoSnapshot.builder(snapshot).protocolReady(true).mode(mode).build());
             }
         }
-    }
-
-    private int toFlymeMode(OppoWireCodec.AncState state) {
-        int primary = state.primary();
-        Integer secondary = state.secondary();
-        if (primary == config.ancPrimary() && (secondary == null || secondary == 0x00)) {
-            return EncoSnapshot.MODE_ANC;
-        }
-        if (primary == config.offPrimary() && (secondary == null || secondary == 0x00)) {
-            return EncoSnapshot.MODE_OFF;
-        }
-        if (primary == OppoWireConfig.TRANSPARENCY_PRIMARY && (secondary == null || secondary == 0x00)) {
-            return EncoSnapshot.MODE_TRANSPARENCY;
-        }
-        if (primary == 0x00 && secondary != null && (secondary == 0x01 || secondary == 0x02)) {
-            return EncoSnapshot.MODE_TRANSPARENCY;
-        }
-        if (primary == 0x00 && secondary != null && secondary == 0x08) {
-            return EncoSnapshot.MODE_ANC;
-        }
-        if (primary == 0x08 && (secondary == null || secondary == 0x00)) {
-            return EncoSnapshot.MODE_OFF;
-        }
-        if ((primary == 0x10 || primary == 0x20 || primary == 0x40 || primary == 0x80)
-                && (secondary == null || secondary == 0x00)) {
-            return EncoSnapshot.MODE_ANC;
-        }
-        return 0;
     }
 
     private static byte[] filterDebugNotifications(byte[] ids) {
