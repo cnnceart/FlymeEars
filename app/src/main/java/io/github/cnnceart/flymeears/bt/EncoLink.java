@@ -336,6 +336,14 @@ public final class EncoLink {
     private void handle(OppoWireCodec.Frame frame) {
         log("帧 cmd=0x" + String.format(java.util.Locale.ROOT, "%04X", frame.command())
                 + " payload=" + OppoWireCodec.hex(frame.payload()));
+        if (frame.command() == 0x8112 && frame.payload().length >= 2) {
+            parseMultiConnect(frame.payload());
+            return;
+        }
+        if (frame.command() == 0x8108 && frame.payload().length >= 2) {
+            parseKeyFunctions(frame.payload());
+            return;
+        }
         if (frame.command() == 0x8109 && frame.payload().length >= 2) {
             applyComponentStatus(frame.payload(), 1);
             return;
@@ -427,6 +435,66 @@ public final class EncoLink {
      * 解析 <status=0> <count> <component> <value>… 的组件状态表。
      * Enco X2 实测：4=在盒、5=出盒未戴、7=佩戴中（左右耳）；盒固定 4。
      */
+    /** 0x0112：多设备/双连接信息。 */
+    private void parseMultiConnect(byte[] payload) {
+        int count = payload[1] & 0xFF;
+        int offset = 2;
+        for (int i = 0; i < count; i++) {
+            if (offset + 6 > payload.length) {
+                break;
+            }
+            StringBuilder mac = new StringBuilder();
+            for (int b = 0; b < 6; b++) {
+                if (b > 0) {
+                    mac.append(':');
+                }
+                mac.append(String.format(java.util.Locale.ROOT, "%02X", payload[offset + b]));
+            }
+            offset += 6;
+            if (offset + 4 > payload.length) {
+                break;
+            }
+            offset++;                       // 块长度
+            int state = payload[offset++] & 0xFF;
+            int flags = payload[offset++] & 0xFF;
+            int nameLength = payload[offset++] & 0xFF;
+            if (offset + nameLength > payload.length) {
+                break;
+            }
+            String name = new String(payload, offset, nameLength,
+                    java.nio.charset.StandardCharsets.UTF_8);
+            offset += nameLength;
+            int deviceType = ((flags >> 3) & 7);
+            log("多设备[" + i + "] " + name + " " + mac + " state=" + state
+                    + " current=" + ((flags & 1) != 0)
+                    + " mainAudio=" + ((flags & 2) != 0)
+                    + " audioActive=" + ((flags & 4) != 0)
+                    + " type=" + deviceType);
+        }
+    }
+
+    /** 0x0108：左右耳按键/快捷操作表。 */
+    private void parseKeyFunctions(byte[] payload) {
+        int count = payload[1] & 0xFF;
+        int offset = 2;
+        StringBuilder text = new StringBuilder();
+        for (int i = 0; i < count && offset + 4 <= payload.length; i++) {
+            int deviceType = payload[offset] & 0xFF;
+            int button = payload[offset + 1] & 0xFF;
+            int action = payload[offset + 2] & 0xFF;
+            int function = payload[offset + 3] & 0xFF;
+            offset += 4;
+            if (text.length() > 0) {
+                text.append("; ");
+            }
+            text.append("dev").append(deviceType)
+                    .append("/btn").append(button)
+                    .append("/act").append(action)
+                    .append("->").append(function);
+        }
+        log("快捷操作表：" + text);
+    }
+
     private void applyComponentStatus(byte[] payload, int headerLength) {
         if (headerLength >= payload.length) {
             return;
