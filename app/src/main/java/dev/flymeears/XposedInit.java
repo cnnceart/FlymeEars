@@ -37,6 +37,7 @@ public final class XposedInit extends XposedModule {
             installStep("deviceCenter", () -> allowDeviceCenter(loader));
         } else if ("com.meizu.earphone".equals(packageName)) {
             dev.flymeears.hook.EarphonePopupHooks.install(this, loader);
+            dev.flymeears.hook.DeviceListHooks.install(this, loader);
         } else if ("com.meizu.connectivitysettings".equals(packageName)) {
             probe(loader, "com.meizu.settings.bluetooth.BluetoothDeviceDetailFragment");
         }
@@ -81,7 +82,8 @@ public final class XposedInit extends XposedModule {
                 Object result = chain.proceed();
                 try {
                     android.app.Application application = (android.app.Application) chain.getThisObject();
-                    dev.flymeears.systemui.EncoSession.start(application);
+                    dev.flymeears.systemui.EncoSession.start(application,
+                            getRemotePreferences("flymeears"));
                     registerControlReceiver(application);
                 } catch (Throwable error) {
                     log(Log.ERROR, TAG, "session: 启动失败", error);

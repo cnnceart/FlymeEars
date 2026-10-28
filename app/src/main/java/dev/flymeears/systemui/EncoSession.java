@@ -37,6 +37,7 @@ public final class EncoSession implements EncoLink.Listener {
     private boolean popupShown;
     private volatile EncoSnapshot snapshot;
     private final java.util.List<Runnable> observers = new java.util.concurrent.CopyOnWriteArrayList<>();
+    private volatile android.content.SharedPreferences preferences;
 
     private EncoSession(Context context) {
         this.context = context;
@@ -53,6 +54,11 @@ public final class EncoSession implements EncoLink.Listener {
     }
 
     public static void start(Context context) {
+        start(context, null);
+    }
+
+    /** prefs 为模块远程偏好，用于把设备地址/名称共享给耳机 App 进程。 */
+    public static void start(Context context, android.content.SharedPreferences prefs) {
         EncoSession local = instance;
         if (local == null) {
             synchronized (EncoSession.class) {
@@ -62,6 +68,9 @@ public final class EncoSession implements EncoLink.Listener {
                     instance = local;
                 }
             }
+        }
+        if (prefs != null) {
+            local.preferences = prefs;
         }
         local.attach();
     }
@@ -156,6 +165,7 @@ public final class EncoSession implements EncoLink.Listener {
                 currentAddress = address;
                 currentName = name;
                 popupShown = false;
+                remember(address, name);
                 Log.i(TAG, "session: 连接 " + name + "（" + address + "）");
                 link.start(address, name, this);
             }
@@ -167,6 +177,19 @@ public final class EncoSession implements EncoLink.Listener {
             popupShown = false;
             link.stop();
             snapshot = null;
+        }
+    }
+
+    /** 把当前耳机写进远程偏好，供 com.meizu.earphone 进程注入设备列表使用。 */
+    private void remember(String address, String name) {
+        android.content.SharedPreferences prefs = preferences;
+        if (prefs == null) {
+            return;
+        }
+        try {
+            prefs.edit().putString("address", address).putString("name", name).apply();
+        } catch (Throwable error) {
+            Log.w(TAG, "session: 写远程偏好失败", error);
         }
     }
 
