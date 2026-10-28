@@ -32,12 +32,24 @@ public final class XposedInit extends XposedModule {
 
         if ("com.android.systemui".equals(packageName)) {
             probe(loader, "com.flyme.systemui.volume.QSVolumeControllerImpl");
-            startSystemUiSession(loader);
-            allowDeviceCenter(loader);
+            installStep("session", () -> startSystemUiSession(loader));
+            installStep("volume", () -> dev.flymeenco.systemui.VolumePanelHooks.install(this, loader));
+            installStep("deviceCenter", () -> allowDeviceCenter(loader));
         } else if ("com.meizu.earphone".equals(packageName)) {
             dev.flymeenco.hook.EarphonePopupHooks.install(this, loader);
         } else if ("com.meizu.connectivitysettings".equals(packageName)) {
             probe(loader, "com.meizu.settings.bluetooth.BluetoothDeviceDetailFragment");
+        }
+    }
+
+    /** 每个注入点独立兜底，避免一个失败拖垮其它能力。 */
+    private void installStep(String what, Runnable action) {
+        try {
+            action.run();
+            android.util.Log.i(TAG, "install step ok: " + what);
+        } catch (Throwable error) {
+            android.util.Log.e(TAG, "install step failed: " + what, error);
+            log(Log.ERROR, TAG, "install step failed: " + what, error);
         }
     }
 

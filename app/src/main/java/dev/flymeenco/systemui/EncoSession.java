@@ -35,9 +35,20 @@ public final class EncoSession implements EncoLink.Listener {
     private String currentAddress;
     private boolean popupShown;
     private volatile EncoSnapshot snapshot;
+    private final java.util.List<Runnable> observers = new java.util.concurrent.CopyOnWriteArrayList<>();
 
     private EncoSession(Context context) {
         this.context = context;
+    }
+
+    /** 当前会话（可能为 null，表示 SystemUI 还没启动过会话）。 */
+    public static EncoSession instance() {
+        return instance;
+    }
+
+    /** 注册状态变化回调，用于音量面板重绘。 */
+    public void addObserver(Runnable observer) {
+        observers.add(observer);
     }
 
     public static void start(Context context) {
@@ -170,6 +181,13 @@ public final class EncoSession implements EncoLink.Listener {
     @Override
     public void onSnapshot(EncoSnapshot value) {
         snapshot = value;
+        for (Runnable observer : observers) {
+            try {
+                main.post(observer);
+            } catch (Throwable error) {
+                Log.w(TAG, "session: 通知观察者失败", error);
+            }
+        }
         if (popupShown || !value.connected || !value.protocolReady || !value.hasBattery()) {
             return;
         }
