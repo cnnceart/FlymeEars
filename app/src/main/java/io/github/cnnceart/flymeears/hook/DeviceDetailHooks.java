@@ -1,10 +1,7 @@
 package io.github.cnnceart.flymeears.hook;
 
 import android.app.Activity;
-import android.content.BroadcastReceiver;
-import android.content.Context;
 import android.content.Intent;
-import android.content.IntentFilter;
 import android.graphics.Color;
 import android.graphics.drawable.GradientDrawable;
 import android.util.Log;
@@ -31,13 +28,13 @@ import io.github.libxposed.api.XposedModule;
  * 所以页面是空的。这里直接在内容容器顶部插入我们的面板：
  * 电量（左/右/盒）+ 当前降噪模式 + 三个模式按钮。
  *
- * <p>状态由 SystemUI 会话通过 {@link EncoIntents#ACTION_STATE} 广播推送，
+ * <p>状态由 SystemUI 会话广播给宿主进程，{@link ModuleState} 缓存后分发；
  * 按钮点击则回发 {@link EncoIntents#ACTION_SET_MODE}，不重复占用 RFCOMM。
  */
 public final class DeviceDetailHooks {
 
     private static final String TAG = "FlymeEars";
-    private static final int RECEIVER_TAG = 0x0f1e0001;
+    private static final int LISTENER_TAG = 0x0f1e0001;
     private static final String CFG_ACTIVITY =
             "com.meizu.earphone.biz.configuration.activity.CfgActivity";
 
@@ -96,17 +93,12 @@ public final class DeviceDetailHooks {
         params.gravity = Gravity.TOP;
         content.addView(panel, params);
 
-        BroadcastReceiver receiver = new BroadcastReceiver() {
-            @Override
-            public void onReceive(Context context, Intent intent) {
-                render(panel, intent);
-            }
-        };
-        IntentFilter filter = new IntentFilter(EncoIntents.ACTION_STATE);
-        activity.registerReceiver(receiver, filter, Context.RECEIVER_EXPORTED);
-        panel.setTag(RECEIVER_TAG, receiver);
+        ModuleState.ensure(activity);
+        Runnable listener = () -> renderFromState(panel);
+        panel.setTag(LISTENER_TAG, listener);
+        ModuleState.addListener(listener);
         Log.i(TAG, "detail: 面板已插入 " + activity.getClass().getName());
-        // 主动问一次当前状态，避免面板空白等待下一次推送。
+        // 主动问一次当前状态（只读，不切换模式），避免面板空白等待下一次推送。
         activity.sendBroadcast(new Intent(EncoIntents.ACTION_CYCLE)
                 .setPackage("com.android.systemui")
                 .putExtra(EncoIntents.EXTRA_QUERY_ONLY, true));
@@ -124,13 +116,9 @@ public final class DeviceDetailHooks {
         if (panel == null) {
             return;
         }
-        Object receiver = panel.getTag(RECEIVER_TAG);
-        if (receiver instanceof BroadcastReceiver registered) {
-            try {
-                activity.unregisterReceiver(registered);
-            } catch (Throwable ignored) {
-                // 已经注销过就算了。
-            }
+        Object listener = panel.getTag(LISTENER_TAG);
+        if (listener instanceof Runnable runnable) {
+            ModuleState.removeListener(runnable);
         }
         content.removeView(panel);
     }
@@ -145,7 +133,7 @@ public final class DeviceDetailHooks {
         panel.setBackground(background);
 
         TextView title = new TextView(activity);
-        title.setText("OPPO Enco X2");
+        title.setText(ModuleState.name() == null ? "OPPO Enco X2" : ModuleState.name());
         title.setTextColor(Color.WHITE);
         title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18);
         title.setTag("flymeears-title");
@@ -184,10 +172,8 @@ public final class DeviceDetailHooks {
         button.setAllCaps(false);
         button.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
         button.setTextColor(Color.WHITE);
-        GradientDrawable background = new GradientDrawable();
-        background.setColor(0xFF2C2C2E);
-        background.setCornerRadius(dp(activity, 18));
-        button.setBackground(background);
+        button.setTag(mode);
+        button.setBackground(buttonBackground(activity, false));
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0,
                 ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
         params.rightMargin = dp(activity, 10);
@@ -198,13 +184,23 @@ public final class DeviceDetailHooks {
         parent.addView(button, params);
     }
 
-    private static void render(LinearLayout panel, Intent intent) {
-        int left = intent.getIntExtra(EncoIntents.EXTRA_LEFT, -1);
-        int right = intent.getIntExtra(EncoIntents.EXTRA_RIGHT, -1);
-        int caseBattery = intent.getIntExtra(EncoIntents.EXTRA_CASE, -1);
-        int mode = intent.getIntExtra(EncoIntents.EXTRA_MODE, 0);
-        String name = intent.getStringExtra(EncoIntents.EXTRA_NAME);
+    private static GradientDrawable buttonBackground(android.content.Context context, boolean active) {
+        GradientDrawable background = new GradientDrawable();
+        background.setColor(active ? 0xFF0A59F7 : 0xFF2C2C2E);
+        background.setCornerRadius(dp(context, 18));
+        return background;
+    }
 
+    private static void renderFromState(LinearLayout panel) {
+        if (!ModuleState.hasState()) {
+            return;
+        }
+        render(panel, ModuleState.name(), ModuleState.left(), ModuleState.right(),
+                ModuleState.box(), ModuleState.mode(), ModuleState.connected());
+    }
+
+    private static void render(LinearLayout panel, String name, int left, int right,
+                               int caseBattery, int mode, boolean connected) {
         TextView title = panel.findViewWithTag("flymeears-title");
         if (title != null && name != null && !name.isEmpty()) {
             title.setText(name);
@@ -222,11 +218,21 @@ public final class DeviceDetailHooks {
         }
         TextView modeView = panel.findViewWithTag("flymeears-mode");
         if (modeView != null) {
-            modeView.setText("降噪模式：" + EncoSnapshot.modeName(mode));
+            modeView.setText(connected ? "降噪模式：" + EncoSnapshot.modeName(mode) : "耳机未连接");
+        }
+        LinearLayout buttons = panel.findViewWithTag("flymeears-buttons");
+        if (buttons != null) {
+            for (int i = 0; i < buttons.getChildCount(); i++) {
+                View child = buttons.getChildAt(i);
+                Object value = child.getTag();
+                boolean active = connected && value instanceof Integer tag && tag == mode;
+                child.setBackground(buttonBackground(panel.getContext(), active));
+                child.setAlpha(connected ? 1f : 0.4f);
+            }
         }
     }
 
-    private static int dp(Activity activity, int value) {
-        return Math.round(value * activity.getResources().getDisplayMetrics().density);
+    private static int dp(android.content.Context context, int value) {
+        return Math.round(value * context.getResources().getDisplayMetrics().density);
     }
 }

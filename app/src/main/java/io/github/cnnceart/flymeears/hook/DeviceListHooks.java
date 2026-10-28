@@ -39,9 +39,13 @@ public final class DeviceListHooks {
     private static final String TRANSPORT_TYPE = "com.meizu.earphone.audiodo.mzbluetooth.TransportType";
     private static final String PREFS = "flymeears";
 
+    private static final int LISTENER_TAG = 0x0f1e0002;
+
     private static ClassLoader loader;
     private static SharedPreferences preferences;
     private static Object injected;
+    private static volatile String resolvedAddress;
+    private static volatile String resolvedName;
 
     private DeviceListHooks() {
     }
@@ -98,6 +102,9 @@ public final class DeviceListHooks {
             module.hook(onCreate).intercept(chain -> {
                 Object result = chain.proceed();
                 try {
+                    if (chain.getThisObject() instanceof android.app.Activity activity) {
+                        ModuleState.ensure(activity);
+                    }
                     redirect(chain.getThisObject());
                 } catch (Throwable error) {
                     Log.w(TAG, "device list: 跳转失败", error);
@@ -108,6 +115,172 @@ public final class DeviceListHooks {
         } catch (Throwable error) {
             Log.e(TAG, "device list: 入口 Hook 失败", error);
         }
+
+        installRowDecoration(module, classLoader);
+    }
+
+    /**
+     * 列表行内补电量与降噪模式：原生行只有名称 + 连接状态，
+     * 第三方设备的这两项都来自 {@link ModuleState}（SystemUI 广播）。
+     */
+    private static void installRowDecoration(XposedModule module, ClassLoader classLoader) {
+        try {
+            Class<?> adapter = Class.forName("b6.e", false, classLoader);
+            Class<?> viewHolder = Class.forName(
+                    "androidx.recyclerview.widget.RecyclerView$ViewHolder", false, classLoader);
+            Method bind = adapter.getDeclaredMethod("onBindViewHolder", viewHolder, int.class);
+            module.hook(bind).intercept(chain -> {
+                Object result = chain.proceed();
+                try {
+                    decorateRow(chain.getArg(0));
+                } catch (Throwable error) {
+                    Log.w(TAG, "device list: 行内状态注入失败", error);
+                }
+                return result;
+            });
+            Log.i(TAG, "device list: 行内状态 Hook 已挂载");
+        } catch (Throwable error) {
+            Log.e(TAG, "device list: 行内状态 Hook 失败", error);
+        }
+
+        try {
+            Class<?> list = Class.forName(
+                    "com.meizu.earphone.biz.deviceList.activity.DeviceListActivity", false, classLoader);
+            Method onCreate = list.getDeclaredMethod("onCreate", android.os.Bundle.class);
+            module.hook(onCreate).intercept(chain -> {
+                Object result = chain.proceed();
+                try {
+                    watchState(chain.getThisObject());
+                } catch (Throwable error) {
+                    Log.w(TAG, "device list: 状态监听失败", error);
+                }
+                return result;
+            });
+            Method onDestroy = findInherited(list, "onDestroy");
+            module.hook(onDestroy).intercept(chain -> {
+                try {
+                    unwatchState(chain.getThisObject());
+                } catch (Throwable error) {
+                    Log.w(TAG, "device list: 状态监听清理失败", error);
+                }
+                return chain.proceed();
+            });
+            Log.i(TAG, "device list: 列表页状态 Hook 已挂载");
+        } catch (Throwable error) {
+            Log.e(TAG, "device list: 列表页状态 Hook 失败", error);
+        }
+    }
+
+    /** 状态变化时重绘列表（只在列表页存活期间监听）。 */
+    private static void watchState(Object instance) {
+        if (!(instance instanceof android.app.Activity activity)) {
+            return;
+        }
+        ModuleState.ensure(activity);
+        Runnable listener = () -> {
+            try {
+                android.view.View content = activity.findViewById(android.R.id.content);
+                if (content == null) {
+                    return;
+                }
+                int id = activity.getResources().getIdentifier(
+                        "scan_device_recycler_view", "id", activity.getPackageName());
+                android.view.View recycler = id == 0 ? null : content.findViewById(id);
+                if (recycler != null) {
+                    Object adapter = call(recycler, "getAdapter");
+                    if (adapter != null) {
+                        call(adapter, "notifyDataSetChanged");
+                    }
+                }
+            } catch (Throwable error) {
+                Log.w(TAG, "device list: 刷新行失败", error);
+            }
+        };
+        android.view.View decor = activity.getWindow() == null ? null : activity.getWindow().getDecorView();
+        if (decor != null) {
+            decor.setTag(LISTENER_TAG, listener);
+        }
+        ModuleState.addListener(listener);
+    }
+
+    private static void unwatchState(Object instance) {
+        if (!(instance instanceof android.app.Activity activity)) {
+            return;
+        }
+        android.view.View decor = activity.getWindow() == null ? null : activity.getWindow().getDecorView();
+        Object tag = decor == null ? null : decor.getTag(LISTENER_TAG);
+        if (tag instanceof Runnable listener) {
+            ModuleState.removeListener(listener);
+            decor.setTag(LISTENER_TAG, null);
+        }
+    }
+
+    private static void decorateRow(Object holder) {
+        String summary = ModuleState.summary();
+        if (summary == null) {
+            return;
+        }
+        Object view;
+        try {
+            java.lang.reflect.Field field = holder.getClass().getField("itemView");
+            view = field.get(holder);
+        } catch (Throwable error) {
+            return;
+        }
+        if (!(view instanceof android.view.View item)) {
+            return;
+        }
+        android.content.Context context = item.getContext();
+        int titleId = context.getResources().getIdentifier(
+                "dl_device_item_title", "id", context.getPackageName());
+        int statusId = context.getResources().getIdentifier(
+                "dl_device_item_connect_status", "id", context.getPackageName());
+        if (titleId == 0 || statusId == 0) {
+            return;
+        }
+        android.view.View titleView = item.findViewById(titleId);
+        android.view.View statusView = item.findViewById(statusId);
+        if (!(titleView instanceof android.widget.TextView title)
+                || !(statusView instanceof android.widget.TextView status)) {
+            return;
+        }
+        String shownName = String.valueOf(title.getText());
+        if (!looksLikeOurs(shownName)) {
+            return;
+        }
+        status.setText(summary);
+    }
+
+    /** 宿主可能没在自己的类里覆盖生命周期方法，沿父类往上找。 */
+    private static Method findInherited(Class<?> type, String name) throws NoSuchMethodException {
+        for (Class<?> current = type; current != null && current != Object.class;
+                current = current.getSuperclass()) {
+            try {
+                return current.getDeclaredMethod(name);
+            } catch (NoSuchMethodException ignored) {
+                // 继续往父类找。
+            }
+        }
+        throw new NoSuchMethodException(type.getName() + "." + name);
+    }
+
+    /** 反射调用无参方法（宿主里的 RecyclerView / Adapter 不在模块的编译类路径上）。 */
+    private static Object call(Object target, String name) throws Exception {
+        Method method = target.getClass().getMethod(name);
+        method.setAccessible(true);
+        return method.invoke(target);
+    }
+
+    private static boolean looksLikeOurs(String deviceName) {
+        if (deviceName == null) {
+            return false;
+        }
+        String ours = ourName();
+        if (ours != null && ours.equals(deviceName)) {
+            return true;
+        }
+        String normalized = deviceName.toLowerCase(java.util.Locale.ROOT).replace(" ", "");
+        return normalized.contains("oppo") || normalized.contains("enco");
     }
 
     /** 有第三方设备时，绕开"添加设备"引导页，直接进设备列表。 */
@@ -217,18 +390,29 @@ public final class DeviceListHooks {
         return (String) field.get(device);
     }
 
-    /** 构造一条 AudioDevice；地址未知时返回 null（不注入空设备）。 */
-    private static synchronized Object device() throws Exception {
-        if (injected != null) {
-            return injected;
-        }
-        if (loader == null) {
-            return null;
+    /** 当前第三方耳机地址（无设备时为 null）。 */
+    static String ourAddress() {
+        resolveIdentity();
+        return resolvedAddress;
+    }
+
+    /** 当前第三方耳机显示名（无设备时为 null）。 */
+    static String ourName() {
+        resolveIdentity();
+        return resolvedName;
+    }
+
+    /**
+     * 解析耳机地址与名称：优先用 SystemUI 会话写下的远程偏好，
+     * 读不到时退回宿主自己的蓝牙配对列表（宿主是系统应用，通常有权限）。
+     */
+    private static synchronized void resolveIdentity() {
+        if (resolvedAddress != null && !resolvedAddress.isEmpty()) {
+            return;
         }
         String address = preferences == null ? null : preferences.getString("address", null);
         String name = preferences == null ? null : preferences.getString("name", null);
         if (address == null || address.isEmpty()) {
-            // 兜底：宿主是系统应用，通常已持有 BLUETOOTH_CONNECT，可直接查已配对设备。
             try {
                 android.bluetooth.BluetoothAdapter adapter =
                         android.bluetooth.BluetoothAdapter.getDefaultAdapter();
@@ -253,11 +437,29 @@ public final class DeviceListHooks {
             }
         }
         if (address == null || address.isEmpty()) {
-            Log.i(TAG, "device list: 没有可用设备地址");
-            return null;
+            return;
         }
         if (name == null || name.isEmpty()) {
             name = "OPPO Enco X2";
+        }
+        resolvedAddress = address;
+        resolvedName = name;
+    }
+
+    /** 构造一条 AudioDevice；地址未知时返回 null（不注入空设备）。 */
+    private static synchronized Object device() throws Exception {
+        if (injected != null) {
+            return injected;
+        }
+        if (loader == null) {
+            return null;
+        }
+        resolveIdentity();
+        String address = resolvedAddress;
+        String name = resolvedName;
+        if (address == null || address.isEmpty()) {
+            Log.i(TAG, "device list: 没有可用设备地址");
+            return null;
         }
 
         Class<?> audioType = Class.forName(AUDIO_DEVICE, true, loader);
