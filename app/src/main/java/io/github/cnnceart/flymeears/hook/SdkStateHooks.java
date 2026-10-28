@@ -254,7 +254,8 @@ public final class SdkStateHooks {
     }
 
     /** 调试用改名通道：直接调用原生 changeDeviceName，避免 adb 输入法丢字。 */
-    private static void registerDebugRename(android.app.Application app) {
+    private static void registerDebugRename(Context app) {
+        Log.i(TAG, "sdk: registerDebugRename 调用 ready=" + debugReceiverReady);
         if (debugReceiverReady) {
             return;
         }
@@ -265,6 +266,7 @@ public final class SdkStateHooks {
                 @Override
                 public void onReceive(Context context, Intent intent) {
                     String name = intent.getStringExtra(EncoIntents.EXTRA_DEBUG_NAME);
+                    Log.i(TAG, "sdk: 收到调试改名 " + name);
                     Activity activity = cfgActivity.get();
                     if (name == null || name.isEmpty() || activity == null) {
                         return;
@@ -279,6 +281,7 @@ public final class SdkStateHooks {
                 }
             }, filter, Context.RECEIVER_EXPORTED);
             debugReceiverReady = true;
+            Log.i(TAG, "sdk: 调试改名通道已注册");
         } catch (Throwable error) {
             Log.w(TAG, "sdk: 注册调试改名失败", error);
         }
@@ -403,6 +406,15 @@ public final class SdkStateHooks {
             if (chain.getThisObject() instanceof Activity activity) {
                 watch(activity);
                 kick(activity);
+                try {
+                    registerDebugRename(activity.getApplicationContext());
+                } catch (Throwable error) {
+                    Log.w(TAG, "sdk: 注册调试改名失败", error);
+                }
+                if (wearListener == null) {
+                    wearListener = SdkStateHooks::pushWear;
+                    ModuleState.addListener(wearListener);
+                }
             }
             return result;
         });
