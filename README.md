@@ -6,10 +6,9 @@
 > 状态：设备列表注入已真机验证（列表显示「OPPO Enco X2 / 已连接」）；
 > 原生连接弹窗、控制中心降噪磁贴已验证；详情页面板与扫描页发现进行中。
 >
-> 架构与取舍：[docs/architecture.md](docs/architecture.md)
-> 逆向细节：[docs/reverse-engineering.md](docs/reverse-engineering.md)
->
 > 许可证：**GPL-3.0**（OPPO 协议与耳机渲染素材参考了同为 GPL-3.0 的 HyperEars / flyme-mod）。
+>
+> 说明：逆向笔记与架构文档（`docs/`）**不入库**，仅在本地保留，避免公开厂商私有实现细节。
 
 
 ## 能力矩阵（真机验证）
