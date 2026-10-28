@@ -27,6 +27,8 @@ public final class XposedInit extends XposedModule {
         String packageName = param.getPackageName();
         ClassLoader loader = param.getClassLoader();
         log(Log.INFO, TAG, "package ready: " + packageName, null);
+        // 同时写 logcat，便于不借助 LSPosed 日志做真机排查。
+        android.util.Log.i(TAG, "package ready: " + packageName);
 
         if ("com.android.systemui".equals(packageName)) {
             probe(loader, "com.flyme.systemui.volume.QSVolumeControllerImpl");

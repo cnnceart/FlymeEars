@@ -57,9 +57,13 @@ public final class EncoLink {
     }
 
     public void start(String address, String name, Listener callback) {
+        start(address, name, OppoWireConfig.forDeviceName(name), callback);
+    }
+
+    public void start(String address, String name, OppoWireConfig wireConfig, Listener callback) {
         stop();
         listener = callback;
-        config = OppoWireConfig.forDeviceName(name);
+        config = wireConfig;
         snapshot = EncoSnapshot.builder(address, name).build();
         running.set(true);
         worker = new Thread(() -> run(address, name), "FlymeEnco-Link");
@@ -228,6 +232,8 @@ public final class EncoLink {
     }
 
     private void handle(OppoWireCodec.Frame frame) {
+        log("帧 cmd=0x" + String.format(java.util.Locale.ROOT, "%04X", frame.command())
+                + " payload=" + OppoWireCodec.hex(frame.payload()));
         byte[] ids = OppoWireCodec.parseNotificationSupport(frame);
         if (ids != null) {
             StringBuilder hex = new StringBuilder();
@@ -240,6 +246,9 @@ public final class EncoLink {
                 writeQuietly(OppoWireCodec.registerNotifications(subscribable));
             }
             publish(EncoSnapshot.builder(snapshot).protocolReady(true).build());
+            // 注册完成后再问一次，确保拿到电量与当前模式。
+            writeQuietly(OppoWireCodec.QUERY_BATTERY_PACKET);
+            writeQuietly(OppoWireCodec.QUERY_ANC_PACKET);
             return;
         }
 
@@ -255,7 +264,9 @@ public final class EncoLink {
             if (battery.caseBattery() != null) {
                 builder.caseBattery(battery.caseBattery().percent(), battery.caseBattery().charging());
             }
-            publish(builder.build());
+            EncoSnapshot next = builder.build();
+            log("电量 L=" + next.leftBattery + "% R=" + next.rightBattery + "% Case=" + next.caseBattery + "%");
+            publish(next);
             return;
         }
 
@@ -263,9 +274,14 @@ public final class EncoLink {
         if (anc != null) {
             int mode = AncMapper.toFlymeMode(anc, config);
             if (mode != AncMapper.MODE_UNKNOWN) {
+                log("降噪模式：" + EncoSnapshot.modeName(mode));
                 publish(EncoSnapshot.builder(snapshot).protocolReady(true).mode(mode).build());
             }
+            return;
         }
+
+        log("未识别帧 cmd=0x" + String.format(java.util.Locale.ROOT, "%04X", frame.command())
+                + " payload=" + OppoWireCodec.hex(frame.payload()));
     }
 
     private static byte[] filterDebugNotifications(byte[] ids) {

@@ -39,6 +39,7 @@ public final class MainActivity extends Activity implements EncoLink.Listener {
     private BluetoothDevice selected;
     private boolean popupOnConnect;
     private boolean popupShown;
+    private int pendingMode;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -52,6 +53,15 @@ public final class MainActivity extends Activity implements EncoLink.Listener {
         if (getIntent() != null && getIntent().getBooleanExtra("auto_link", false)) {
             getWindow().getDecorView().postDelayed(this::autoLink, 400);
         }
+        String mode = getIntent() == null ? null : getIntent().getStringExtra("auto_mode");
+        if (mode != null) {
+            pendingMode = switch (mode) {
+                case "anc" -> EncoSnapshot.MODE_ANC;
+                case "transparency" -> EncoSnapshot.MODE_TRANSPARENCY;
+                case "off" -> EncoSnapshot.MODE_OFF;
+                default -> 0;
+            };
+        }
     }
 
     private void autoLink() {
@@ -61,7 +71,13 @@ public final class MainActivity extends Activity implements EncoLink.Listener {
             return;
         }
         appendLog("自动连接 " + device.getAddress());
-        link.start(device.getAddress(), device.getName(), this);
+        String name = device.getName();
+        dev.flymeenco.protocol.OppoWireConfig config =
+                "compatible".equals(getIntent().getStringExtra("auto_config"))
+                        ? dev.flymeenco.protocol.OppoWireConfig.COMPATIBLE
+                        : dev.flymeenco.protocol.OppoWireConfig.forDeviceName(name);
+        appendLog("ANC 映射：" + config.name());
+        link.start(device.getAddress(), name, config, this);
     }
 
     private void showNativePopup() {
@@ -202,6 +218,12 @@ public final class MainActivity extends Activity implements EncoLink.Listener {
     @Override
     public void onSnapshot(EncoSnapshot snapshot) {
         statusView.setText(snapshot.describe());
+        if (pendingMode != 0 && snapshot.protocolReady) {
+            int target = pendingMode;
+            pendingMode = 0;
+            appendLog("请求模式：" + EncoSnapshot.modeName(target));
+            link.requestMode(target);
+        }
         if (popupOnConnect && !popupShown && snapshot.protocolReady && snapshot.hasBattery()) {
             popupShown = true;
             appendLog("收到真实电量，准备原生弹窗：" + snapshot.describe());

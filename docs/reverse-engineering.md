@@ -98,6 +98,40 @@ MzfpBluetoothDialogFragment: onViewCreated
 | 音量面板降噪图标 | 参考 flyme-mod 的 `QSVolumeControllerImpl` 注入点 | 待实现 |
 | 设备卡片电量 | `com.meizu.connectivitysettings` 待逆向 | 待实现 |
 
+## OPPO Enco X2 实测协议
+
+设备 `OPPO Enco X2`（`2C:4D:79:66:AE:74`），通过私有 RFCOMM
+（UUID `0000079a-d102-11e1-9b23-00025b00a5a5`，实测服务通道 scn=15）验证。
+
+| 用途 | 请求 | 响应 |
+|---|---|---|
+| 电量 | `0x0106` | `0x8106` payload `00 02 01 5A 02 5A`（组件, 值）|
+| 查模式 | `0x010C` payload `01 01` | `0x810C` payload `00 01 01 <p> <s>` |
+| 设模式 | `0x0404` payload `01 01 <p>` | `0x8404` payload `00` = 成功 |
+| 特性查询 | `0x0200` | `0x8200` → ID `01 02 03 04 08 0B F1 F2 F3` |
+| 注册上报 | `0x0205` payload `05 <ids>` | — |
+| 主动上报 | — | `0x0204` payload `03 <type> 01 <value> 00` |
+
+电量组件：`0x01` 左、`0x02` 右、`0x03` 仓；低 7 位是百分比，`0x80` 是充电位。
+耳机在耳时只报左右耳（仓缺失）。
+
+### ANC 取值（实测三态互通）
+
+| 模式 | 写入 primary | 回读 primary/secondary |
+|---|---|---|
+| 降噪 | `0x02` | `0x80`（另有 `0x10/0x20/0x40` 强度档）|
+| 关闭 | `0x01` | `0x08` |
+| 通透 | `0x04` | `0x00` + secondary `0x02` |
+
+结论：X2 使用**标准映射**（`OppoWireConfig.STANDARD`），与 HyperEars 的 Air2 Pro
+例外相反。三种模式写入均返回 `0x8404 00` 并可从 `0x810C` 正确回读。
+
+### 与欢律的互斥
+
+欢律（`com.heytap.headset`）运行时会占用该 RFCOMM 通道，此时 SDP 与固定通道
+均失败（`bt socket closed`）。`pm disable-user --user 0 com.heytap.headset` 后
+SDP 建链立即成功，说明**同一时刻只能有一个私有通道客户端**。
+
 ## 其它线索
 
 - `com.meizu.earphone` 没有任何 `WindowManager` / overlay 代码，弹窗完全在
