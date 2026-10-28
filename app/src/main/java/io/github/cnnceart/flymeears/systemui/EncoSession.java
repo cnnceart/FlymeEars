@@ -160,6 +160,11 @@ public final class EncoSession implements EncoLink.Listener {
         link.requestMode(mode);
     }
 
+    /** 详情页「音效」行设置 EQ 模式。 */
+    public void setEq(int mode) {
+        link.requestEq(mode);
+    }
+
     /**
      * 详情页刚打开时来问一次状态：只回推快照并刷新电量，不改变模式。
      *
@@ -269,6 +274,7 @@ public final class EncoSession implements EncoLink.Listener {
             android.content.Intent state = new android.content.Intent(
                     io.github.cnnceart.flymeears.EncoIntents.ACTION_STATE)
                     .putExtra(io.github.cnnceart.flymeears.EncoIntents.EXTRA_MODE, value.mode)
+                    .putExtra(io.github.cnnceart.flymeears.EncoIntents.EXTRA_EQ, value.eqMode)
                     .putExtra(io.github.cnnceart.flymeears.EncoIntents.EXTRA_LEFT, lastLeft)
                     .putExtra(io.github.cnnceart.flymeears.EncoIntents.EXTRA_RIGHT, lastRight)
                     .putExtra(io.github.cnnceart.flymeears.EncoIntents.EXTRA_CASE, lastCase)

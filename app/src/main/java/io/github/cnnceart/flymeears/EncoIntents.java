@@ -23,6 +23,11 @@ public final class EncoIntents {
     public static final String EXTRA_CONNECTED = "connected";
     public static final String EXTRA_NAME = "name";
 
+    /** 详情页「音效」行 → SystemUI：设置 EQ 模式。 */
+    public static final String ACTION_SET_EQ = "io.github.cnnceart.flymeears.action.SET_EQ";
+
+    public static final String EXTRA_EQ = "eq";
+
     /** 只要求回推当前状态，不要切换模式（详情页打开时用）。 */
     public static final String EXTRA_QUERY_ONLY = "query_only";
 

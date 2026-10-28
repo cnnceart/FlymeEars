@@ -62,6 +62,7 @@ public final class SdkStateHooks {
             installStatusModel(module);
             installBattery(module);
             installAnc(module);
+            installEq(module);
             installCfgActivity(module);
             installDeviceCenter(module);
             Log.i(TAG, "sdk: 宿主 SDK 伪装 Hook 已挂载");
@@ -154,6 +155,83 @@ public final class SdkStateHooks {
             }
             return chain.proceed();
         });
+    }
+
+    /**
+     * 原生「音效」行（SOUND_EFFECT_EQ_MODE）：放出能力位，并把弹窗选择
+     * 转到 0x0406；状态从 0x010F/0x0504 回读写入 f4519q。
+     */
+    private static void installEq(XposedModule module) throws Exception {
+        Class<?> glide = Class.forName("com.bumptech.glide.f", false, loader);
+        Class<?> deviceType = Class.forName(DEVICE, false, loader);
+        Method capabilities = glide.getDeclaredMethod("h", deviceType);
+        module.hook(capabilities).intercept(chain -> {
+            Object result = chain.proceed();
+            try {
+                Object device = chain.getArg(0);
+                if (result instanceof java.util.Set<?> set && isOurs(deviceId(device))) {
+                    Object feature = feature("g", "f6851g");
+                    if (feature != null) {
+                        @SuppressWarnings("unchecked")
+                        java.util.Set<Object> mutable = (java.util.Set<Object>) set;
+                        mutable.add(feature);
+                    }
+                }
+            } catch (Throwable error) {
+                Log.w(TAG, "sdk: 注入音效能力失败", error);
+            }
+            return result;
+        });
+
+        Class<?> wrapper = Class.forName(WRAPPER, false, loader);
+        Method setEq = wrapper.getDeclaredMethod("setEQMode", String.class, int.class);
+        module.hook(setEq).intercept(chain -> {
+            String deviceId = (String) chain.getArg(0);
+            int mode = ((Number) chain.getArg(1)).intValue();
+            if (isOurs(deviceId)) {
+                sendEq(chain.getThisObject(), mode);
+                try {
+                    Object device = DeviceListHooks.injectedDevice();
+                    Object model = device == null ? null : call(device, "n");
+                    if (model != null) {
+                        setField(model, mode, "q", "f4519q");
+                    }
+                } catch (Throwable error) {
+                    Log.w(TAG, "sdk: 写 EQ 状态失败", error);
+                }
+                Log.i(TAG, "sdk: 原生音效切换 -> " + mode);
+                return null;
+            }
+            return chain.proceed();
+        });
+    }
+
+    private static Object feature(String... names) throws Exception {
+        Class<?> type = Class.forName("i5.a", false, loader);
+        for (String name : names) {
+            try {
+                java.lang.reflect.Field field = type.getDeclaredField(name);
+                field.setAccessible(true);
+                return field.get(null);
+            } catch (NoSuchFieldException ignored) {
+                // 继续试别名。
+            }
+        }
+        return null;
+    }
+
+    private static void sendEq(Object wrapper, int mode) {
+        try {
+            Context context = (Context) readField(wrapper, "context");
+            if (context == null) {
+                return;
+            }
+            context.sendBroadcast(new Intent(EncoIntents.ACTION_SET_EQ)
+                    .setPackage("com.android.systemui")
+                    .putExtra(EncoIntents.EXTRA_EQ, mode));
+        } catch (Throwable error) {
+            Log.w(TAG, "sdk: 下发 EQ 失败", error);
+        }
     }
 
     /**
@@ -288,6 +366,10 @@ public final class SdkStateHooks {
                 if (mode == EncoSnapshot.MODE_ANC) {
                     setField(model, ANC_INTENSITY_SMART, "d", "f4509d");
                 }
+            }
+            int eq = ModuleState.eq();
+            if (eq >= 0) {
+                setField(model, eq, "q", "f4519q");
             }
             Log.i(TAG, "sdk: 状态模型 -> " + name + " / " + EncoSnapshot.modeName(mode));
         } catch (Throwable error) {

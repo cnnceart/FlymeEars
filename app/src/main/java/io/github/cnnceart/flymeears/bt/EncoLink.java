@@ -127,6 +127,38 @@ public final class EncoLink {
         }
     }
 
+    /** 设置 OPPO EQ 模式（0..3），成功后耳机会主动回 0x0504。 */
+    public void requestEq(int mode) {
+        OutputStream stream = output;
+        if (stream == null || !running.get()) {
+            log("链路未就绪，无法设置 EQ");
+            return;
+        }
+        try {
+            stream.write(OppoWireCodec.packet(0x0406, new byte[]{(byte) mode}));
+            stream.flush();
+            main.postDelayed(this::refreshEq, 600);
+            log("已下发 EQ 模式 " + mode);
+        } catch (IOException error) {
+            log("EQ 下发失败：" + error.getClass().getSimpleName());
+            closeQuietly();
+        }
+    }
+
+    private void refreshEq() {
+        OutputStream stream = output;
+        if (stream == null || !running.get()) {
+            return;
+        }
+        try {
+            stream.write(OppoWireCodec.packet(0x010F));
+            stream.flush();
+        } catch (IOException error) {
+            log("EQ 刷新失败：" + error.getClass().getSimpleName());
+            closeQuietly();
+        }
+    }
+
     public void refresh() {
         OutputStream stream = output;
         if (stream == null || !running.get()) {
@@ -135,6 +167,7 @@ public final class EncoLink {
         try {
             stream.write(OppoWireCodec.QUERY_BATTERY_PACKET);
             stream.write(OppoWireCodec.QUERY_ANC_PACKET);
+            stream.write(OppoWireCodec.packet(0x010F));
             stream.flush();
         } catch (IOException error) {
             log("刷新失败：" + error.getClass().getSimpleName());
@@ -278,6 +311,7 @@ public final class EncoLink {
         stream.write(OppoWireCodec.QUERY_NOTIFICATION_SUPPORT_PACKET);
         stream.write(OppoWireCodec.QUERY_BATTERY_PACKET);
         stream.write(OppoWireCodec.QUERY_ANC_PACKET);
+        stream.write(OppoWireCodec.packet(0x010F));
         stream.flush();
     }
 
@@ -300,6 +334,25 @@ public final class EncoLink {
     private void handle(OppoWireCodec.Frame frame) {
         log("帧 cmd=0x" + String.format(java.util.Locale.ROOT, "%04X", frame.command())
                 + " payload=" + OppoWireCodec.hex(frame.payload()));
+        if (frame.command() == 0x810F && frame.payload().length >= 2
+                && (frame.payload()[0] & 0xFF) == 0) {
+            int eq = frame.payload()[1] & 0xFF;
+            log("EQ 模式：" + eq);
+            publish(EncoSnapshot.builder(snapshot).eq(eq).build());
+            return;
+        }
+        if (frame.command() == 0x0504 && frame.payload().length >= 1) {
+            int eq = frame.payload()[0] & 0xFF;
+            log("EQ 模式变化：" + eq);
+            publish(EncoSnapshot.builder(snapshot).eq(eq).build());
+            return;
+        }
+        if (frame.command() == 0x8406) {
+            int status = frame.payload().length > 0 ? frame.payload()[0] & 0xFF : -1;
+            log("EQ 设置" + (status == 0 ? "成功" : "失败（0x"
+                    + String.format(java.util.Locale.ROOT, "%02X", status) + "）"));
+            return;
+        }
         if (frame.command() == 0x8404) {
             int status = frame.payload().length > 0 ? frame.payload()[0] & 0xFF : -1;
             if (status != 0) {

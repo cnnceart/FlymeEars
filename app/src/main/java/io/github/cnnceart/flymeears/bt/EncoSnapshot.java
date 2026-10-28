@@ -17,6 +17,8 @@ public final class EncoSnapshot {
     public final boolean connected;
     public final boolean protocolReady;
     public final int mode;
+    /** OPPO EQ 模式（0..3），-1 表示还没读到。 */
+    public final int eqMode;
     public final int leftBattery;
     public final int rightBattery;
     public final int caseBattery;
@@ -31,6 +33,7 @@ public final class EncoSnapshot {
         connected = builder.connected;
         protocolReady = builder.protocolReady;
         mode = builder.mode;
+        eqMode = builder.eqMode;
         leftBattery = builder.leftBattery;
         rightBattery = builder.rightBattery;
         caseBattery = builder.caseBattery;
@@ -87,6 +90,7 @@ public final class EncoSnapshot {
         boolean connected;
         boolean protocolReady;
         int mode;
+        int eqMode = -1;
         int leftBattery = -1;
         int rightBattery = -1;
         int caseBattery = -1;
@@ -102,6 +106,7 @@ public final class EncoSnapshot {
                 connected = source.connected;
                 protocolReady = source.protocolReady;
                 mode = source.mode;
+                eqMode = source.eqMode;
                 leftBattery = source.leftBattery;
                 rightBattery = source.rightBattery;
                 caseBattery = source.caseBattery;
@@ -124,6 +129,11 @@ public final class EncoSnapshot {
 
         public Builder mode(int value) {
             mode = value;
+            return this;
+        }
+
+        public Builder eq(int value) {
+            eqMode = value;
             return this;
         }
 

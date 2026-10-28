@@ -36,6 +36,7 @@ public final class ModuleState {
     private static volatile boolean connected;
     private static volatile String name;
     private static volatile int mode;
+    private static volatile int eq = -1;
     private static volatile int left = -1;
     private static volatile int right = -1;
     private static volatile int box = -1;
@@ -74,6 +75,7 @@ public final class ModuleState {
             return;
         }
         mode = intent.getIntExtra(EncoIntents.EXTRA_MODE, 0);
+        eq = intent.getIntExtra(EncoIntents.EXTRA_EQ, -1);
         left = intent.getIntExtra(EncoIntents.EXTRA_LEFT, -1);
         right = intent.getIntExtra(EncoIntents.EXTRA_RIGHT, -1);
         box = intent.getIntExtra(EncoIntents.EXTRA_CASE, -1);
@@ -122,6 +124,10 @@ public final class ModuleState {
 
     public static int mode() {
         return mode;
+    }
+
+    public static int eq() {
+        return eq;
     }
 
     public static int left() {
