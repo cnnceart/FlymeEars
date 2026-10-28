@@ -129,9 +129,8 @@ public final class EncoLink {
                 return;
             }
             BluetoothDevice device = adapter.getRemoteDevice(address);
-            local = device.createRfcommSocketToServiceRecord(OPPO_RFCOMM_UUID);
+            local = connect(device);
             socket = local;
-            local.connect();
             output = local.getOutputStream();
             InputStream input = local.getInputStream();
             log("RFCOMM 已连接：" + name + "（" + address + "）");
@@ -143,7 +142,8 @@ public final class EncoLink {
             fail("缺少蓝牙权限或被系统拒绝");
         } catch (IOException error) {
             if (running.get()) {
-                fail("连接失败：" + error.getClass().getSimpleName());
+                fail("连接失败：" + error.getClass().getSimpleName()
+                        + (error.getMessage() == null ? "" : " / " + error.getMessage()));
             }
         } finally {
             closeQuietly();
@@ -152,6 +152,51 @@ public final class EncoLink {
             }
             running.set(false);
         }
+    }
+
+    /**
+     * 先按 SDP UUID 建链；失败时按已知服务通道回退。
+     *
+     * <p>OPPO Enco 的私有服务在实测机型上落在 RFCOMM scn 15；SDP 查询失败
+     * （例如厂商 App 已占用链路）时直接连通道更稳。
+     */
+    private BluetoothSocket connect(BluetoothDevice device) throws IOException {
+        try {
+            BluetoothSocket socket = device.createRfcommSocketToServiceRecord(OPPO_RFCOMM_UUID);
+            socket.connect();
+            log("通过 SDP UUID 建链");
+            return socket;
+        } catch (IOException error) {
+            log("SDP 建链失败：" + describe(error) + "，尝试固定通道");
+        }
+        IOException last = null;
+        for (int channel : new int[]{15, 1, 2, 3, 4}) {
+            BluetoothSocket candidate = null;
+            try {
+                java.lang.reflect.Method create = device.getClass()
+                        .getMethod("createRfcommSocket", int.class);
+                create.setAccessible(true);
+                candidate = (BluetoothSocket) create.invoke(device, channel);
+                candidate.connect();
+                log("通过 RFCOMM 通道 " + channel + " 建链");
+                return candidate;
+            } catch (Throwable error) {
+                if (candidate != null) {
+                    try {
+                        candidate.close();
+                    } catch (IOException ignored) {
+                        // 关闭失败不影响换下一个通道。
+                    }
+                }
+                last = error instanceof IOException io ? io : new IOException(error);
+            }
+        }
+        throw last != null ? last : new IOException("RFCOMM 不可用");
+    }
+
+    private static String describe(Throwable error) {
+        return error.getClass().getSimpleName()
+                + (error.getMessage() == null ? "" : " / " + error.getMessage());
     }
 
     private void writeInitialQueries() throws IOException {

@@ -1,0 +1,202 @@
+package dev.flymeenco.systemui;
+
+import android.bluetooth.BluetoothAdapter;
+import android.bluetooth.BluetoothDevice;
+import android.content.Context;
+import android.media.AudioDeviceCallback;
+import android.media.AudioDeviceInfo;
+import android.media.AudioManager;
+import android.os.Handler;
+import android.os.Looper;
+import android.util.Log;
+
+import dev.flymeenco.bt.EncoLink;
+import dev.flymeenco.bt.EncoSnapshot;
+import dev.flymeenco.popup.PopupLauncher;
+
+/**
+ * SystemUI 进程内的耳机会话：发现 OPPO/Enco 输出设备 → 建立直连 →
+ * 拿到真实电量后拉起 Flyme 原生弹窗。
+ *
+ * <p>放在 SystemUI 是因为它常驻、且能以系统身份启动宿主 Activity；
+ * 弹窗只在该设备本次连接后展示一次。
+ */
+public final class EncoSession implements EncoLink.Listener {
+
+    private static final String TAG = "FlymeEnco";
+
+    private static volatile EncoSession instance;
+
+    private final Context context;
+    private final Handler main = new Handler(Looper.getMainLooper());
+    private final EncoLink link = new EncoLink();
+
+    private boolean audioCallbackRegistered;
+    private String currentAddress;
+    private boolean popupShown;
+    private volatile EncoSnapshot snapshot;
+
+    private EncoSession(Context context) {
+        this.context = context;
+    }
+
+    public static void start(Context context) {
+        EncoSession local = instance;
+        if (local == null) {
+            synchronized (EncoSession.class) {
+                local = instance;
+                if (local == null) {
+                    local = new EncoSession(context.getApplicationContext());
+                    instance = local;
+                }
+            }
+        }
+        local.attach();
+    }
+
+    private void attach() {
+        if (audioCallbackRegistered) {
+            return;
+        }
+        AudioManager audio = context.getSystemService(AudioManager.class);
+        if (audio == null) {
+            return;
+        }
+        audio.registerAudioDeviceCallback(new AudioDeviceCallback() {
+            @Override
+            public void onAudioDevicesAdded(AudioDeviceInfo[] added) {
+                reconcile();
+            }
+
+            @Override
+            public void onAudioDevicesRemoved(AudioDeviceInfo[] removed) {
+                reconcile();
+            }
+        }, main);
+        audioCallbackRegistered = true;
+        reconcile();
+        Log.i(TAG, "session: 已监听音频设备");
+    }
+
+    public EncoSnapshot snapshot() {
+        return snapshot;
+    }
+
+    /** 当前是否有一副可控的 OPPO/Enco 耳机。 */
+    public boolean active() {
+        EncoSnapshot value = snapshot;
+        return value != null && value.connected;
+    }
+
+    public int mode() {
+        EncoSnapshot value = snapshot;
+        return value == null ? 0 : value.mode;
+    }
+
+    public void cycleMode() {
+        int current = mode();
+        int next = switch (current) {
+            case EncoSnapshot.MODE_ANC -> EncoSnapshot.MODE_TRANSPARENCY;
+            case EncoSnapshot.MODE_TRANSPARENCY -> EncoSnapshot.MODE_OFF;
+            default -> EncoSnapshot.MODE_ANC;
+        };
+        link.requestMode(next);
+    }
+
+    private void reconcile() {
+        AudioManager audio = context.getSystemService(AudioManager.class);
+        if (audio == null) {
+            return;
+        }
+        for (AudioDeviceInfo output : audio.getDevices(AudioManager.GET_DEVICES_OUTPUTS)) {
+            if (output.getType() != AudioDeviceInfo.TYPE_BLUETOOTH_A2DP
+                    && output.getType() != AudioDeviceInfo.TYPE_BLE_HEADSET) {
+                continue;
+            }
+            String address = output.getAddress();
+            if (address == null || !BluetoothAdapter.checkBluetoothAddress(address)) {
+                continue;
+            }
+            String name = resolveName(output, address);
+            if (name == null || !looksLikeEnco(name)) {
+                continue;
+            }
+            if (!address.equals(currentAddress)) {
+                currentAddress = address;
+                popupShown = false;
+                Log.i(TAG, "session: 连接 " + name + "（" + address + "）");
+                link.start(address, name, this);
+            }
+            return;
+        }
+        if (currentAddress != null) {
+            Log.i(TAG, "session: 设备已断开，释放链路");
+            currentAddress = null;
+            popupShown = false;
+            link.stop();
+            snapshot = null;
+        }
+    }
+
+    private static boolean looksLikeEnco(String name) {
+        String normalized = name.toLowerCase(java.util.Locale.ROOT).replace(" ", "");
+        return normalized.contains("oppo") || normalized.contains("enco");
+    }
+
+    private String resolveName(AudioDeviceInfo output, String address) {
+        try {
+            CharSequence product = output.getProductName();
+            if (product != null && product.length() > 0) {
+                return product.toString();
+            }
+        } catch (Throwable ignored) {
+            // 取不到产品名时继续尝试蓝牙层。
+        }
+        try {
+            BluetoothAdapter adapter = BluetoothAdapter.getDefaultAdapter();
+            if (adapter != null) {
+                BluetoothDevice device = adapter.getRemoteDevice(address);
+                String name = device.getName();
+                if (name != null) {
+                    return name;
+                }
+            }
+        } catch (Throwable error) {
+            Log.w(TAG, "session: 取设备名失败（权限？）", error);
+        }
+        return null;
+    }
+
+    @Override
+    public void onSnapshot(EncoSnapshot value) {
+        snapshot = value;
+        if (popupShown || !value.connected || !value.protocolReady || !value.hasBattery()) {
+            return;
+        }
+        popupShown = true;
+        BluetoothDevice device = device(value.address);
+        if (device == null) {
+            Log.w(TAG, "session: 找不到设备对象，跳过弹窗");
+            return;
+        }
+        int left = Math.max(value.leftBattery, 0);
+        int right = Math.max(value.rightBattery, 0);
+        int box = Math.max(value.caseBattery, 0);
+        Log.i(TAG, "session: 拉起原生弹窗 " + left + "/" + right + "/" + box);
+        main.post(() -> PopupLauncher.show(context, device, left, right, box));
+    }
+
+    @Override
+    public void onLog(String message) {
+        Log.i(TAG, "session: " + message);
+    }
+
+    private BluetoothDevice device(String address) {
+        try {
+            BluetoothAdapter adapter = BluetoothAdapter.getDefaultAdapter();
+            return adapter == null ? null : adapter.getRemoteDevice(address);
+        } catch (Throwable error) {
+            return null;
+        }
+    }
+}

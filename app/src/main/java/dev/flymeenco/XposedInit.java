@@ -30,10 +30,32 @@ public final class XposedInit extends XposedModule {
 
         if ("com.android.systemui".equals(packageName)) {
             probe(loader, "com.flyme.systemui.volume.QSVolumeControllerImpl");
+            startSystemUiSession(loader);
         } else if ("com.meizu.earphone".equals(packageName)) {
             dev.flymeenco.hook.EarphonePopupHooks.install(this, loader);
         } else if ("com.meizu.connectivitysettings".equals(packageName)) {
             probe(loader, "com.meizu.settings.bluetooth.BluetoothDeviceDetailFragment");
+        }
+    }
+
+    /** 在 SystemUI 启动时挂上耳机会话（自动直连 + 原生弹窗）。 */
+    private void startSystemUiSession(ClassLoader loader) {
+        try {
+            Class<?> app = Class.forName("com.android.systemui.SystemUIApplication", false, loader);
+            Method onCreate = app.getDeclaredMethod("onCreate");
+            hook(onCreate).intercept(chain -> {
+                Object result = chain.proceed();
+                try {
+                    android.app.Application application = (android.app.Application) chain.getThisObject();
+                    dev.flymeenco.systemui.EncoSession.start(application);
+                } catch (Throwable error) {
+                    log(Log.ERROR, TAG, "session: 启动失败", error);
+                }
+                return result;
+            });
+            log(Log.INFO, TAG, "session: 已挂载 SystemUIApplication", null);
+        } catch (Throwable error) {
+            log(Log.ERROR, TAG, "session: 挂载失败", error);
         }
     }
 

@@ -37,15 +37,31 @@ public final class MainActivity extends Activity implements EncoLink.Listener {
     private TextView logView;
     private LinearLayout deviceList;
     private BluetoothDevice selected;
+    private boolean popupOnConnect;
+    private boolean popupShown;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(buildContent());
         requestBluetoothPermission();
+        popupOnConnect = getIntent() != null && getIntent().getBooleanExtra("popup_on_connect", false);
         if (getIntent() != null && getIntent().getBooleanExtra("auto_popup", false)) {
             getWindow().getDecorView().postDelayed(this::showNativePopup, 1200);
         }
+        if (getIntent() != null && getIntent().getBooleanExtra("auto_link", false)) {
+            getWindow().getDecorView().postDelayed(this::autoLink, 400);
+        }
+    }
+
+    private void autoLink() {
+        BluetoothDevice device = dev.flymeenco.popup.PopupLauncher.findEncoDevice();
+        if (device == null) {
+            appendLog("没有找到已配对的 OPPO/Enco 耳机");
+            return;
+        }
+        appendLog("自动连接 " + device.getAddress());
+        link.start(device.getAddress(), device.getName(), this);
     }
 
     private void showNativePopup() {
@@ -186,6 +202,11 @@ public final class MainActivity extends Activity implements EncoLink.Listener {
     @Override
     public void onSnapshot(EncoSnapshot snapshot) {
         statusView.setText(snapshot.describe());
+        if (popupOnConnect && !popupShown && snapshot.protocolReady && snapshot.hasBattery()) {
+            popupShown = true;
+            appendLog("收到真实电量，准备原生弹窗：" + snapshot.describe());
+            getWindow().getDecorView().postDelayed(this::showNativePopup, 600);
+        }
     }
 
     @Override
