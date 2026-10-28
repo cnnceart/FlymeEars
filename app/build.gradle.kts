@@ -3,12 +3,12 @@ plugins {
 }
 
 android {
-    namespace = "dev.flymeears"
+    namespace = "com.cnnceart.flymeears"
     compileSdk = 37
 
     defaultConfig {
         // 可用 -PappId=... 覆盖，便于在 LSPosed 未授权新包名时做兼容测试。
-        applicationId = (project.findProperty("appId") as String?) ?: "dev.flymeears"
+        applicationId = (project.findProperty("appId") as String?) ?: "com.cnnceart.flymeears"
         minSdk = 31
         targetSdk = 36
         versionCode = 1
