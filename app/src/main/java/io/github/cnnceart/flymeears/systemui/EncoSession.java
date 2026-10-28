@@ -160,6 +160,11 @@ public final class EncoSession implements EncoLink.Listener {
         link.requestMode(mode);
     }
 
+    /** 查找耳机：响铃 / 停止。 */
+    public void find(boolean on) {
+        link.requestFind(on);
+    }
+
     /** 详情页「音效」行设置 EQ 模式。 */
     public void setEq(int mode) {
         link.requestEq(mode);

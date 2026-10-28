@@ -127,6 +127,23 @@ public final class EncoLink {
         }
     }
 
+    /** 查找耳机：0x0400 01 响铃 / 00 停止，实测均返回 0x8400 00。 */
+    public void requestFind(boolean on) {
+        OutputStream stream = output;
+        if (stream == null || !running.get()) {
+            log("链路未就绪，无法查找耳机");
+            return;
+        }
+        try {
+            stream.write(OppoWireCodec.packet(0x0400, new byte[]{(byte) (on ? 1 : 0)}));
+            stream.flush();
+            log(on ? "已请求耳机响铃" : "已请求停止响铃");
+        } catch (IOException error) {
+            log("查找耳机失败：" + error.getClass().getSimpleName());
+            closeQuietly();
+        }
+    }
+
     /** 设置 OPPO EQ 模式（0..3），成功后耳机会主动回 0x0504。 */
     public void requestEq(int mode) {
         OutputStream stream = output;

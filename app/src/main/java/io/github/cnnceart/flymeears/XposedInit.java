@@ -58,12 +58,21 @@ public final class XposedInit extends XposedModule {
         filter.addAction(io.github.cnnceart.flymeears.EncoIntents.ACTION_SET_MODE);
         filter.addAction(io.github.cnnceart.flymeears.EncoIntents.ACTION_PROBE);
         filter.addAction(io.github.cnnceart.flymeears.EncoIntents.ACTION_SET_EQ);
+        filter.addAction(io.github.cnnceart.flymeears.EncoIntents.ACTION_FIND);
         android.content.BroadcastReceiver receiver = new android.content.BroadcastReceiver() {
             @Override
             public void onReceive(android.content.Context context, android.content.Intent intent) {
                 io.github.cnnceart.flymeears.systemui.EncoSession session =
                         io.github.cnnceart.flymeears.systemui.EncoSession.instance();
                 if (session == null) {
+                    return;
+                }
+                if (io.github.cnnceart.flymeears.EncoIntents.ACTION_FIND
+                        .equals(intent.getAction())) {
+                    boolean on = intent.getBooleanExtra(
+                            io.github.cnnceart.flymeears.EncoIntents.EXTRA_FIND_ON, false);
+                    session.find(on);
+                    android.util.Log.i(TAG, "session: 查找耳机 " + (on ? "响铃" : "停止"));
                     return;
                 }
                 if (io.github.cnnceart.flymeears.EncoIntents.ACTION_SET_EQ

@@ -37,6 +37,10 @@ public final class EncoIntents {
     /** 只要求回推当前状态，不要切换模式（详情页打开时用）。 */
     public static final String EXTRA_QUERY_ONLY = "query_only";
 
+    /** 查找耳机：让耳机响铃 / 停止。 */
+    public static final String ACTION_FIND = "io.github.cnnceart.flymeears.action.FIND";
+    public static final String EXTRA_FIND_ON = "find_on";
+
     /** 调试：通过原生 changeDeviceName 改名（输入法不可靠时用）。 */
     public static final String ACTION_DEBUG_RENAME = "io.github.cnnceart.flymeears.action.DEBUG_RENAME";
     public static final String EXTRA_DEBUG_NAME = "debug_name";
