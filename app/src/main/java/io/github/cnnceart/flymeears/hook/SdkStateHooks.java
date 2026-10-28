@@ -48,6 +48,8 @@ public final class SdkStateHooks {
     private static volatile WeakReference<Activity> cfgActivity = new WeakReference<>(null);
     private static volatile Runnable cfgListener;
     private static volatile Activity cfgListenerOwner;
+    private static volatile Object remotePrefImpl;
+    private static volatile Runnable cardListener;
 
     private SdkStateHooks() {
     }
@@ -61,6 +63,7 @@ public final class SdkStateHooks {
             installBattery(module);
             installAnc(module);
             installCfgActivity(module);
+            installDeviceCenter(module);
             Log.i(TAG, "sdk: 宿主 SDK 伪装 Hook 已挂载");
         } catch (Throwable error) {
             Log.e(TAG, "sdk: Hook 失败", error);
@@ -313,6 +316,74 @@ public final class SdkStateHooks {
                     .putExtra(EncoIntents.EXTRA_MODE, mode));
         } catch (Throwable error) {
             Log.w(TAG, "sdk: 下发模式失败", error);
+        }
+    }
+
+    /**
+     * 设备中心卡片（SystemUI 里的 CustomTilePlugin）只在耳机 App 推送
+     * deviceConnectionSuccessful / onNoiseControlModeChanged 时刷新。
+     * 第三方耳机没有 SDK 回调，所以这里借用同一个 RemoteCallbackList 主动推。
+     */
+    private static void installDeviceCenter(XposedModule module) throws Exception {
+        Class<?> service = Class.forName(
+                "com.meizu.earphone.biz.devicecontrol.RemotePrefService", false, loader);
+        Method onCreate = service.getDeclaredMethod("onCreate");
+        module.hook(onCreate).intercept(chain -> {
+            Object result = chain.proceed();
+            try {
+                Object impl = readField(chain.getThisObject(), "a", "f4671a");
+                if (impl != null) {
+                    remotePrefImpl = impl;
+                    Context context = (Context) chain.getThisObject();
+                    ModuleState.ensure(context);
+                    if (cardListener == null) {
+                        cardListener = SdkStateHooks::pushCard;
+                        ModuleState.addListener(cardListener);
+                    }
+                }
+            } catch (Throwable error) {
+                Log.w(TAG, "sdk: 设备中心服务初始化失败", error);
+            }
+            return result;
+        });
+
+        Class<?> impl = Class.forName(
+                "com.meizu.earphone.biz.devicecontrol.remote.RemotePrefServiceImpl",
+                false, loader);
+        Class<?> callback = Class.forName(
+                "com.meizu.earphone.biz.devicecontrol.remote.IBluetoothConnectionStatusCallback",
+                false, loader);
+        Method register = impl.getDeclaredMethod("registerCallback", callback);
+        module.hook(register).intercept(chain -> {
+            Object result = chain.proceed();
+            // 插件刚绑定时先推一次，让它拿到电量和当前模式。
+            new android.os.Handler(android.os.Looper.getMainLooper())
+                    .postDelayed(SdkStateHooks::pushCard, 600L);
+            return result;
+        });
+        Log.i(TAG, "sdk: 设备中心推送 Hook 已挂载");
+    }
+
+    private static void pushCard() {
+        Object impl = remotePrefImpl;
+        if (impl == null) {
+            return;
+        }
+        try {
+            Object callback = readField(impl, "bcmCallback");
+            Object device = DeviceListHooks.injectedDevice();
+            String deviceId = DeviceListHooks.ourAddress();
+            if (callback == null || device == null || deviceId == null) {
+                return;
+            }
+            findMethod(callback.getClass(), "deviceConnectionSuccessful", 1).invoke(callback, device);
+            if (ModuleState.hasState()) {
+                findMethod(callback.getClass(), "onNoiseControlModeChanged", 2)
+                        .invoke(callback, deviceId, ModuleState.mode());
+            }
+            Log.i(TAG, "sdk: 已向设备中心推送状态");
+        } catch (Throwable error) {
+            Log.w(TAG, "sdk: 推送设备中心失败", error);
         }
     }
 

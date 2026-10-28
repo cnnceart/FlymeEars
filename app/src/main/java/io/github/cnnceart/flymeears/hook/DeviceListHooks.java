@@ -446,6 +446,16 @@ public final class DeviceListHooks {
         resolvedName = name;
     }
 
+    /** 供其它 Hook 复用的设备实例（设备中心推送需要同一个 AudioDevice）。 */
+    static Object injectedDevice() {
+        try {
+            return device();
+        } catch (Throwable error) {
+            Log.w(TAG, "device list: 构建设备实例失败", error);
+            return null;
+        }
+    }
+
     /** 构造一条 AudioDevice；地址未知时返回 null（不注入空设备）。 */
     private static synchronized Object device() throws Exception {
         if (injected != null) {
