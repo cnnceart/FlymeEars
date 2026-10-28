@@ -201,7 +201,7 @@ public final class EncoSession implements EncoLink.Listener {
             context.sendBroadcast(new android.content.Intent(dev.flymeears.EncoIntents.ACTION_MODE)
                     .putExtra(dev.flymeears.EncoIntents.EXTRA_MODE, mode)
                     .putExtra(dev.flymeears.EncoIntents.EXTRA_BATTERY, battery)
-                    .setPackage("dev.flymeears"));
+                    .setPackage(dev.flymeears.BuildConfig.APPLICATION_ID));
         } catch (Throwable error) {
             Log.w(TAG, "session: 广播模式失败", error);
         }

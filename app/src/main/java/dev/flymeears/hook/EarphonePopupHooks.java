@@ -84,7 +84,8 @@ public final class EarphonePopupHooks {
             target.setOnClickListener(view -> {
                 try {
                     android.content.Intent intent = new android.content.Intent()
-                            .setClassName("dev.flymeears", "dev.flymeears.ui.MainActivity")
+                            .setClassName(dev.flymeears.BuildConfig.APPLICATION_ID,
+                                    "dev.flymeears.ui.MainActivity")
                             .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK);
                     view.getContext().startActivity(intent);
                     // 弹窗使命完成，收起来。

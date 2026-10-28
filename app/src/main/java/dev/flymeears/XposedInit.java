@@ -115,7 +115,7 @@ public final class XposedInit extends XposedModule {
                     Object info = chain.getArg(0);
                     Object component = serviceInfo.getField("componentName").get(info);
                     if (component instanceof android.content.ComponentName name
-                            && "dev.flymeears".equals(name.getPackageName())) {
+                            && BuildConfig.APPLICATION_ID.equals(name.getPackageName())) {
                         return true;
                     }
                 } catch (Throwable ignored) {

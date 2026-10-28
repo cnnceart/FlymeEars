@@ -11,14 +11,14 @@
         android:theme="@android:style/Theme.DeviceDefault.DayNight">
 
         <activity
-            android:name=".ui.MainActivity"
+            android:name="dev.flymeears.ui.MainActivity"
             android:exported="true"
             android:label="FlymeEars" />
 
         <!-- 桌面图标放在 alias 上，便于运行期隐藏/恢复。 -->
         <activity-alias
-            android:name=".ui.Launcher"
-            android:targetActivity=".ui.MainActivity"
+            android:name="dev.flymeears.ui.Launcher"
+            android:targetActivity="dev.flymeears.ui.MainActivity"
             android:exported="true"
             android:label="FlymeEars"
             android:icon="@android:drawable/ic_menu_compass">
@@ -30,7 +30,7 @@
 
         <!-- 隐藏桌面图标后的入口：快捷设置磁贴。 -->
         <service
-            android:name=".ui.EncoTileService"
+            android:name="dev.flymeears.ui.EncoTileService"
             android:exported="true"
             android:label="FlymeEars"
             android:icon="@android:drawable/ic_menu_compass"
@@ -46,7 +46,7 @@
           将来启用时注意不要与 SystemUI 会话同时持有 RFCOMM。
 
         <service
-            android:name=".control.EncoControlService"
+            android:name="dev.flymeears.control.EncoControlService"
             android:exported="true"
             android:label="FlymeEars"
             android:permission="android.permission.BIND_CONTROLS">
@@ -58,7 +58,7 @@
 
         <!-- 控制中心「降噪」磁贴 -->
         <service
-            android:name=".ui.AncTileService"
+            android:name="dev.flymeears.ui.AncTileService"
             android:exported="true"
             android:label="降噪"
             android:icon="@android:drawable/ic_lock_silent_mode"
@@ -69,7 +69,7 @@
         </service>
 
         <provider
-            android:name=".popup.ArtProvider"
+            android:name="dev.flymeears.popup.ArtProvider"
             android:authorities="dev.flymeears.art"
             android:exported="true"
             android:grantUriPermissions="true" />

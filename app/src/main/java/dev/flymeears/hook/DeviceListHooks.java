@@ -50,6 +50,8 @@ public final class DeviceListHooks {
         loader = classLoader;
         try {
             preferences = module.getRemotePreferences(PREFS);
+            Log.i(TAG, "device list: 偏好 address=" + (preferences == null ? "null"
+                    : preferences.getString("address", "null")));
         } catch (Throwable error) {
             Log.w(TAG, "device list: 读取远程偏好失败", error);
         }
@@ -87,6 +89,66 @@ public final class DeviceListHooks {
         } catch (Throwable error) {
             Log.e(TAG, "device list: 列表 Hook 失败", error);
         }
+
+        // 原生 MainActivity 只按"魅族缓存列表"决定去配对页还是设备页；
+        // 第三方设备不在缓存里，所以这里直接在同进程拉起设备页。
+        try {
+            Class<?> main = Class.forName("com.meizu.earphone.MainActivity", false, classLoader);
+            Method onCreate = main.getDeclaredMethod("onCreate", android.os.Bundle.class);
+            module.hook(onCreate).intercept(chain -> {
+                Object result = chain.proceed();
+                try {
+                    redirect(chain.getThisObject());
+                } catch (Throwable error) {
+                    Log.w(TAG, "device list: 跳转失败", error);
+                }
+                return result;
+            });
+            Log.i(TAG, "device list: 入口 Hook 已挂载");
+        } catch (Throwable error) {
+            Log.e(TAG, "device list: 入口 Hook 失败", error);
+        }
+    }
+
+    /** 有第三方设备时，绕开"添加设备"引导页，直接进设备列表。 */
+    private static void redirect(Object activity) {
+        if (!(activity instanceof android.app.Activity host)) {
+            return;
+        }
+        boolean available;
+        try {
+            available = device() != null;
+        } catch (Throwable error) {
+            Log.w(TAG, "device list: 解析设备失败", error);
+            available = false;
+        }
+        Log.i(TAG, "device list: 入口检查 available=" + available);
+        if (!available) {
+            return;
+        }
+        android.view.View decor = host.getWindow() == null ? null : host.getWindow().getDecorView();
+        if (decor == null) {
+            return;
+        }
+        decor.postDelayed(() -> {
+            try {
+                android.content.Intent intent = new android.content.Intent()
+                        .setClassName(host, "com.meizu.earphone.biz.deviceList.activity.DeviceListActivity")
+                        .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK);
+                host.startActivity(intent);
+                Log.i(TAG, "device list: 已跳转设备列表");
+            } catch (Throwable error) {
+                Log.w(TAG, "device list: 启动设备列表失败", error);
+            }
+        }, 800L);
+    }
+
+    private static boolean hasDevice() {
+        if (preferences == null) {
+            return false;
+        }
+        String address = preferences.getString("address", null);
+        return address != null && !address.isEmpty();
     }
 
     @SuppressWarnings("unchecked")
@@ -111,7 +173,7 @@ public final class DeviceListHooks {
     /** 原生按魅族 SDK 判定连接态，第三方设备需要手工置为 2（已连接）。 */
     @SuppressWarnings("unchecked")
     private static void markConnected(Object viewModel) throws Exception {
-        Field field = viewModel.getClass().getDeclaredField("f5336c");
+        Field field = findField(viewModel.getClass(), "c", "f5336c");
         field.setAccessible(true);
         Object value = field.get(viewModel);
         if (!(value instanceof java.util.List<?> list)) {
@@ -126,18 +188,32 @@ public final class DeviceListHooks {
             if (item == null) {
                 continue;
             }
-            Field deviceField = item.getClass().getDeclaredField("f5246b");
+            Field deviceField = findField(item.getClass(), "b", "f5246b");
             deviceField.setAccessible(true);
             Object audioDevice = deviceField.get(item);
             if (audioDevice != null && id.equals(deviceId(audioDevice))) {
-                Field status = audioDevice.getClass().getField("l");
+                Field status = findField(audioDevice.getClass(), "l");
+                status.setAccessible(true);
                 status.setInt(audioDevice, 2);
             }
         }
     }
 
+    /** jadx 会把混淆字段显示成 fxxxxx，运行时要按原始单字母名取。 */
+    private static Field findField(Class<?> type, String... names) throws NoSuchFieldException {
+        for (String name : names) {
+            try {
+                return type.getDeclaredField(name);
+            } catch (NoSuchFieldException ignored) {
+                // 继续尝试下一个名字。
+            }
+        }
+        throw new NoSuchFieldException(String.join("/", names));
+    }
+
     private static String deviceId(Object device) throws Exception {
-        Field field = device.getClass().getField("f4497a");
+        Field field = findField(device.getClass(), "a", "f4497a");
+        field.setAccessible(true);
         return (String) field.get(device);
     }
 
@@ -152,6 +228,32 @@ public final class DeviceListHooks {
         String address = preferences == null ? null : preferences.getString("address", null);
         String name = preferences == null ? null : preferences.getString("name", null);
         if (address == null || address.isEmpty()) {
+            // 兜底：宿主是系统应用，通常已持有 BLUETOOTH_CONNECT，可直接查已配对设备。
+            try {
+                android.bluetooth.BluetoothAdapter adapter =
+                        android.bluetooth.BluetoothAdapter.getDefaultAdapter();
+                if (adapter != null) {
+                    for (android.bluetooth.BluetoothDevice device : adapter.getBondedDevices()) {
+                        String deviceName = device.getName();
+                        if (deviceName == null) {
+                            continue;
+                        }
+                        String normalized = deviceName.toLowerCase(java.util.Locale.ROOT)
+                                .replace(" ", "");
+                        if (normalized.contains("oppo") || normalized.contains("enco")) {
+                            address = device.getAddress();
+                            name = deviceName;
+                            Log.i(TAG, "device list: 从蓝牙配对列表取到 " + deviceName);
+                            break;
+                        }
+                    }
+                }
+            } catch (Throwable error) {
+                Log.w(TAG, "device list: 查询配对设备失败", error);
+            }
+        }
+        if (address == null || address.isEmpty()) {
+            Log.i(TAG, "device list: 没有可用设备地址");
             return null;
         }
         if (name == null || name.isEmpty()) {

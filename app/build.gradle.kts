@@ -7,7 +7,8 @@ android {
     compileSdk = 37
 
     defaultConfig {
-        applicationId = "dev.flymeears"
+        // 可用 -PappId=... 覆盖，便于在 LSPosed 未授权新包名时做兼容测试。
+        applicationId = (project.findProperty("appId") as String?) ?: "dev.flymeears"
         minSdk = 31
         targetSdk = 36
         versionCode = 1
