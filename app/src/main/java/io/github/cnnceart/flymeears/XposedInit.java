@@ -59,12 +59,18 @@ public final class XposedInit extends XposedModule {
         filter.addAction(io.github.cnnceart.flymeears.EncoIntents.ACTION_PROBE);
         filter.addAction(io.github.cnnceart.flymeears.EncoIntents.ACTION_SET_EQ);
         filter.addAction(io.github.cnnceart.flymeears.EncoIntents.ACTION_FIND);
+        filter.addAction(io.github.cnnceart.flymeears.EncoIntents.ACTION_SHOW_POPUP);
         android.content.BroadcastReceiver receiver = new android.content.BroadcastReceiver() {
             @Override
             public void onReceive(android.content.Context context, android.content.Intent intent) {
                 io.github.cnnceart.flymeears.systemui.EncoSession session =
                         io.github.cnnceart.flymeears.systemui.EncoSession.instance();
                 if (session == null) {
+                    return;
+                }
+                if (io.github.cnnceart.flymeears.EncoIntents.ACTION_SHOW_POPUP
+                        .equals(intent.getAction())) {
+                    session.showPopupNow();
                     return;
                 }
                 if (io.github.cnnceart.flymeears.EncoIntents.ACTION_FIND

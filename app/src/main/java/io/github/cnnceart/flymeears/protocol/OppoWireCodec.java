@@ -6,7 +6,7 @@ import java.util.List;
 /**
  * OPPO Enco 私有协议编解码。
  *
- * <p>移植自 HyperEars 的 {@code OppoWireCodec}（GPL-3.0）。仅做线缆层编解码，
+ * <p>移植自 HyperEars 的 {@code OppoWireCodec}（GPL-3.0-only）。仅做线缆层编解码，
  * 型号语义由 {@link OppoWireConfig} 决定：Enco Air2 Pro 家族把 ANC 与关闭两个值
  * 对调，其余型号使用标准映射。
  *

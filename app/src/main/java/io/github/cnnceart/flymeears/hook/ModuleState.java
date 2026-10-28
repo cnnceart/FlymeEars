@@ -41,6 +41,9 @@ public final class ModuleState {
     private static volatile boolean wearRight;
     private static volatile boolean inBoxLeft;
     private static volatile boolean inBoxRight;
+    private static volatile boolean leftCharging;
+    private static volatile boolean rightCharging;
+    private static volatile boolean boxCharging;
     private static volatile int left = -1;
     private static volatile int right = -1;
     private static volatile int box = -1;
@@ -84,6 +87,9 @@ public final class ModuleState {
         wearRight = intent.getBooleanExtra(EncoIntents.EXTRA_WEAR_RIGHT, false);
         inBoxLeft = intent.getBooleanExtra(EncoIntents.EXTRA_IN_BOX_LEFT, false);
         inBoxRight = intent.getBooleanExtra(EncoIntents.EXTRA_IN_BOX_RIGHT, false);
+        leftCharging = intent.getBooleanExtra(EncoIntents.EXTRA_LEFT_CHARGING, false);
+        rightCharging = intent.getBooleanExtra(EncoIntents.EXTRA_RIGHT_CHARGING, false);
+        boxCharging = intent.getBooleanExtra(EncoIntents.EXTRA_BOX_CHARGING, false);
         left = intent.getIntExtra(EncoIntents.EXTRA_LEFT, -1);
         right = intent.getIntExtra(EncoIntents.EXTRA_RIGHT, -1);
         box = intent.getIntExtra(EncoIntents.EXTRA_CASE, -1);
@@ -152,6 +158,18 @@ public final class ModuleState {
 
     public static boolean inBoxRight() {
         return inBoxRight;
+    }
+
+    public static boolean leftCharging() {
+        return leftCharging;
+    }
+
+    public static boolean rightCharging() {
+        return rightCharging;
+    }
+
+    public static boolean boxCharging() {
+        return boxCharging;
     }
 
     public static int left() {

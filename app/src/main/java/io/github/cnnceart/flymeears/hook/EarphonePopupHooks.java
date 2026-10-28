@@ -51,10 +51,82 @@ public final class EarphonePopupHooks {
                 return result;
             });
             Log.i(TAG, "popup hook: 已挂载 " + FRAGMENT);
+
+            Class<?> dialog = Class.forName("com.meizu.bluetooth.sdk.MzfpDailogActivity",
+                    false, loader);
+            Method dialogCreate = dialog.getDeclaredMethod("onCreate", android.os.Bundle.class);
+            module.hook(dialogCreate).intercept(chain -> {
+                Object result = chain.proceed();
+                if (chain.getThisObject() instanceof android.app.Activity activity) {
+                    popupActivity = new java.lang.ref.WeakReference<>(activity);
+                    ModuleState.ensure(activity);
+                    installCloseListener();
+                }
+                return result;
+            });
+            Log.i(TAG, "popup hook: 弹窗生命周期 Hook 已挂载");
         } catch (ClassNotFoundException error) {
             Log.i(TAG, "popup hook: 未找到 " + FRAGMENT);
         } catch (Throwable error) {
             Log.e(TAG, "popup hook: 安装失败", error);
+        }
+    }
+
+    private static java.lang.ref.WeakReference<android.app.Activity> popupActivity =
+            new java.lang.ref.WeakReference<>(null);
+    private static Runnable closeListener;
+
+    /** 耳机断开时原生弹窗不会自己关，这里按状态广播把它收掉。 */
+    private static void installCloseListener() {
+        if (closeListener != null) {
+            return;
+        }
+        closeListener = () -> {
+            android.app.Activity activity = popupActivity.get();
+            if (activity == null || activity.isFinishing() || activity.isDestroyed()) {
+                return;
+            }
+            if (ModuleState.hasState() && !ModuleState.connected()) {
+                Log.i(TAG, "popup hook: 耳机已断开，关闭弹窗");
+                activity.finish();
+            }
+        };
+        ModuleState.addListener(closeListener);
+    }
+
+    /** 弹窗的电量闪电是静态图，按 bit7 决定显示或隐藏。 */
+    private static void applyCharging(View root, Object fragment) {
+        try {
+            Class<?> type = fragment.getClass();
+            Object device = field(type, fragment, "mMzfpDevice");
+            if (device == null) {
+                return;
+            }
+            setCharging(root, "iv_bat_charge",
+                    (int) device.getClass().getMethod("getBoxBattery").invoke(device));
+            setCharging(root, "iv_left_charge",
+                    (int) device.getClass().getMethod("getLeftBattery").invoke(device));
+            setCharging(root, "iv_right_charge",
+                    (int) device.getClass().getMethod("getRightBattery").invoke(device));
+        } catch (Throwable error) {
+            Log.w(TAG, "popup hook: 标记充电失败", error);
+        }
+    }
+
+    /** 原生把充电闪电图标写死在布局里，这里按 bit7 决定显示/隐藏。 */
+    private static void setCharging(View root, String idName, int raw) {
+        if (raw < 0) {
+            return;
+        }
+        int id = root.getResources().getIdentifier(idName, "id", "com.meizu.earphone");
+        if (id == 0) {
+            return;
+        }
+        View target = root.findViewById(id);
+        if (target != null) {
+            boolean charging = (raw & 0x80) != 0;
+            target.setVisibility(charging ? View.VISIBLE : View.INVISIBLE);
+            Log.i(TAG, "popup hook: " + idName + " raw=" + raw + " charging=" + charging);
         }
     }
 
@@ -67,6 +139,7 @@ public final class EarphonePopupHooks {
         replace(root, "iv_tws_right", ArtProvider.BUD_RIGHT);
         hideMissingComponents(root, fragment);
         applyName(fragment);
+        applyCharging(root, fragment);
         applyFunctionButton(fragment);
     }
 

@@ -28,6 +28,11 @@ public final class EncoIntents {
 
     public static final String EXTRA_EQ = "eq";
 
+    /** 充电状态（bit7 语义，独立布尔值）。 */
+    public static final String EXTRA_LEFT_CHARGING = "left_charging";
+    public static final String EXTRA_RIGHT_CHARGING = "right_charging";
+    public static final String EXTRA_BOX_CHARGING = "box_charging";
+
     /** 佩戴/在盒状态（0x0109：4=在盒、5=出盒未戴、7=佩戴）。 */
     public static final String EXTRA_WEAR_LEFT = "wear_left";
     public static final String EXTRA_WEAR_RIGHT = "wear_right";
@@ -36,6 +41,9 @@ public final class EncoIntents {
 
     /** 只要求回推当前状态，不要切换模式（详情页打开时用）。 */
     public static final String EXTRA_QUERY_ONLY = "query_only";
+
+    /** 调试：用当前快照拉起原生连接弹窗。 */
+    public static final String ACTION_SHOW_POPUP = "io.github.cnnceart.flymeears.action.SHOW_POPUP";
 
     /** 查找耳机：让耳机响铃 / 停止。 */
     public static final String ACTION_FIND = "io.github.cnnceart.flymeears.action.FIND";

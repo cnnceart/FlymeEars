@@ -52,6 +52,12 @@ public final class EncoSession implements EncoLink.Listener {
         return instance;
     }
 
+    /** 卡片 Hook 读取当前电量与充电状态用。 */
+    public static EncoSnapshot currentSnapshot() {
+        EncoSession session = instance;
+        return session == null ? null : session.snapshot;
+    }
+
     /** 注册状态变化回调，用于音量面板重绘。 */
     public void addObserver(Runnable observer) {
         observers.add(observer);
@@ -214,6 +220,7 @@ public final class EncoSession implements EncoLink.Listener {
         }
         if (currentAddress != null) {
             Log.i(TAG, "session: 设备已断开，释放链路");
+            broadcastDisconnected();
             currentAddress = null;
             popupShown = false;
             link.stop();
@@ -288,6 +295,12 @@ public final class EncoSession implements EncoLink.Listener {
                             value.leftStatus == 4)
                     .putExtra(io.github.cnnceart.flymeears.EncoIntents.EXTRA_IN_BOX_RIGHT,
                             value.rightStatus == 4)
+                    .putExtra(io.github.cnnceart.flymeears.EncoIntents.EXTRA_LEFT_CHARGING,
+                            value.leftCharging)
+                    .putExtra(io.github.cnnceart.flymeears.EncoIntents.EXTRA_RIGHT_CHARGING,
+                            value.rightCharging)
+                    .putExtra(io.github.cnnceart.flymeears.EncoIntents.EXTRA_BOX_CHARGING,
+                            value.caseCharging)
                     .putExtra(io.github.cnnceart.flymeears.EncoIntents.EXTRA_LEFT, lastLeft)
                     .putExtra(io.github.cnnceart.flymeears.EncoIntents.EXTRA_RIGHT, lastRight)
                     .putExtra(io.github.cnnceart.flymeears.EncoIntents.EXTRA_CASE, lastCase)
@@ -299,6 +312,40 @@ public final class EncoSession implements EncoLink.Listener {
         } catch (Throwable error) {
             Log.w(TAG, "session: 广播状态失败", error);
         }
+    }
+
+    /** 断开时也要广播一次，宿主的详情页/弹窗才能收起。 */
+    private void broadcastDisconnected() {
+        try {
+            android.content.Intent state = new android.content.Intent(
+                    io.github.cnnceart.flymeears.EncoIntents.ACTION_STATE)
+                    .putExtra(io.github.cnnceart.flymeears.EncoIntents.EXTRA_CONNECTED, false)
+                    .putExtra(io.github.cnnceart.flymeears.EncoIntents.EXTRA_LEFT, lastLeft)
+                    .putExtra(io.github.cnnceart.flymeears.EncoIntents.EXTRA_RIGHT, lastRight)
+                    .putExtra(io.github.cnnceart.flymeears.EncoIntents.EXTRA_CASE, lastCase)
+                    .putExtra(io.github.cnnceart.flymeears.EncoIntents.EXTRA_NAME, currentName);
+            context.sendBroadcast(new android.content.Intent(state).setPackage("com.meizu.earphone"));
+            context.sendBroadcast(new android.content.Intent(state)
+                    .setPackage(io.github.cnnceart.flymeears.BuildConfig.APPLICATION_ID));
+        } catch (Throwable error) {
+            Log.w(TAG, "session: 广播断开失败", error);
+        }
+    }
+
+    /** 调试：用当前快照立刻拉起原生弹窗。 */
+    public void showPopupNow() {
+        EncoSnapshot value = snapshot;
+        if (value == null) {
+            Log.w(TAG, "session: 没有快照，无法弹窗");
+            return;
+        }
+        BluetoothDevice device = device(value.address);
+        if (device == null) {
+            return;
+        }
+        main.post(() -> PopupLauncher.show(context, device, value.leftBattery,
+                value.rightBattery, value.caseBattery, value.leftCharging,
+                value.rightCharging, value.caseCharging));
     }
 
     private void broadcastMode(int mode) {
@@ -369,7 +416,11 @@ public final class EncoSession implements EncoLink.Listener {
         int right = value.rightBattery;
         int box = value.caseBattery;
         Log.i(TAG, "session: 拉起原生弹窗 " + left + "/" + right + "/" + box);
-        main.post(() -> PopupLauncher.show(context, device, left, right, box));
+        boolean leftCharging = value.leftCharging;
+        boolean rightCharging = value.rightCharging;
+        boolean boxCharging = value.caseCharging;
+        main.post(() -> PopupLauncher.show(context, device, left, right, box,
+                leftCharging, rightCharging, boxCharging));
     }
 
     @Override

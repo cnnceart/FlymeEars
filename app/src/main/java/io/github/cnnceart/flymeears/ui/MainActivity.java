@@ -86,8 +86,12 @@ public final class MainActivity extends Activity implements EncoLink.Listener {
         int left = snapshot != null && snapshot.leftBattery >= 0 ? snapshot.leftBattery : 88;
         int right = snapshot != null && snapshot.rightBattery >= 0 ? snapshot.rightBattery : 87;
         int box = snapshot != null && snapshot.caseBattery >= 0 ? snapshot.caseBattery : 95;
+        boolean leftCharging = snapshot != null && snapshot.leftCharging;
+        boolean rightCharging = snapshot != null && snapshot.rightCharging;
+        boolean boxCharging = snapshot != null && snapshot.caseCharging;
         boolean shown = io.github.cnnceart.flymeears.popup.PopupLauncher.show(
-                this, io.github.cnnceart.flymeears.popup.PopupLauncher.findEncoDevice(), left, right, box);
+                this, io.github.cnnceart.flymeears.popup.PopupLauncher.findEncoDevice(),
+                left, right, box, leftCharging, rightCharging, boxCharging);
         appendLog(shown ? "已请求原生弹窗" : "原生弹窗请求失败（看 logcat）");
     }
 

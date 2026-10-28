@@ -70,6 +70,8 @@ public final class SdkStateHooks {
             installEq(module);
             installWearing(module);
             installRename(module);
+            installBatteryCharging(module);
+            installBatteryUnit(module);
             installWearPush(module);
             installCfgActivity(module);
             installDeviceCenter(module);
@@ -253,6 +255,73 @@ public final class SdkStateHooks {
         });
     }
 
+    /**
+     * 原生详情页的电量行把 isCharging 写死成 false（CfgBaseViewModel:277），
+     * 这里在三格电量模型构造后按真实充电状态重建 k5.b。
+     */
+    private static void installBatteryCharging(XposedModule module) throws Exception {
+        Class<?> row = Class.forName("t5.a", false, loader);
+        Class<?> cell = Class.forName("k5.b", false, loader);
+        java.lang.reflect.Constructor<?> constructor =
+                row.getDeclaredConstructor(cell, cell, cell);
+        module.hook(constructor).intercept(chain -> {
+            Object result = chain.proceed();
+            try {
+                Activity activity = cfgActivity.get();
+                if (activity == null || !isOurs((String) call(activity, "getDeviceId"))) {
+                    return result;
+                }
+                setField(result, withCharging(cell, chain.getArg(0), ModuleState.boxCharging()),
+                        "f8833d", "d");
+                setField(result, withCharging(cell, chain.getArg(1), ModuleState.leftCharging()),
+                        "e", "e");
+                setField(result, withCharging(cell, chain.getArg(2), ModuleState.rightCharging()),
+                        "f8834f", "f");
+                Log.i(TAG, "sdk: 电量行充电状态 -> " + ModuleState.boxCharging() + "/"
+                        + ModuleState.leftCharging() + "/" + ModuleState.rightCharging());
+            } catch (Throwable error) {
+                Log.w(TAG, "sdk: 电量充电状态修正失败", error);
+            }
+            return result;
+        });
+    }
+
+    /**
+     * 原生 BatteryUnitView.setCharging 无视入参，永远隐藏闪电并关掉充电色，
+     * 这里按真实状态重新实现：显示闪电 + 电池填充变绿。
+     */
+    private static void installBatteryUnit(XposedModule module) throws Exception {
+        Class<?> unit = Class.forName("com.meizu.earphone.widgets.BatteryUnitView", false, loader);
+        Method setCharging = unit.getDeclaredMethod("setCharging", boolean.class);
+        module.hook(setCharging).intercept(chain -> {
+            boolean charging = (Boolean) chain.getArg(0);
+            Object self = chain.getThisObject();
+            try {
+                Object icon = readField(self, "q", "f4760q");
+                if (icon instanceof android.view.View view) {
+                    view.setVisibility(charging ? android.view.View.VISIBLE
+                            : android.view.View.GONE);
+                }
+                Object battery = readField(self, "r", "f4761r");
+                if (battery != null) {
+                    findMethod(battery.getClass(), "setCharging", 1)
+                            .invoke(battery, charging);
+                }
+            } catch (Throwable error) {
+                Log.w(TAG, "sdk: 电量充电图标失败", error);
+            }
+            return null;
+        });
+    }
+
+    private static Object withCharging(Class<?> cell, Object model, boolean charging)
+            throws Exception {
+        Object title = readField(model, "a", "f7177a");
+        Object level = readField(model, "b", "f7178b");
+        return cell.getConstructor(String.class, float.class, boolean.class)
+                .newInstance(title, level, charging);
+    }
+
     /** 调试用改名通道：直接调用原生 changeDeviceName，避免 adb 输入法丢字。 */
     private static void registerDebugRename(Context app) {
         Log.i(TAG, "sdk: registerDebugRename 调用 ready=" + debugReceiverReady);
@@ -401,6 +470,11 @@ public final class SdkStateHooks {
         Class<?> cfg = Class.forName(CFG_ACTIVITY, false, loader);
         Method onCreate = cfg.getDeclaredMethod("onCreate", android.os.Bundle.class);
         module.hook(onCreate).intercept(chain -> {
+            // onCreate 内部就会构建电量行，先把当前 Activity 交给
+            // installBatteryCharging 的构造器 Hook 使用。
+            if (chain.getThisObject() instanceof Activity opening) {
+                cfgActivity = new WeakReference<>(opening);
+            }
             Object result = chain.proceed();
             Log.i(TAG, "sdk: CfgActivity.onCreate 命中");
             if (chain.getThisObject() instanceof Activity activity) {
@@ -550,9 +624,9 @@ public final class SdkStateHooks {
         Constructor<?> constructor = type.getConstructor(int.class, boolean.class,
                 int.class, boolean.class, int.class, boolean.class);
         return constructor.newInstance(
-                ModuleState.box(), false,
-                ModuleState.left(), false,
-                ModuleState.right(), false);
+                ModuleState.box(), ModuleState.boxCharging(),
+                ModuleState.left(), ModuleState.leftCharging(),
+                ModuleState.right(), ModuleState.rightCharging());
     }
 
     private static void sendMode(Object wrapper, int mode) {

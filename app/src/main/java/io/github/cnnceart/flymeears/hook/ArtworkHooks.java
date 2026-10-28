@@ -95,6 +95,13 @@ public final class ArtworkHooks {
                     CharSequence text = view.getText();
                     if (text != null && "-1%".contentEquals(text) && isPluginBattery(view)) {
                         view.setText("--");
+                    } else if (text != null && !text.toString().contains("⚡")) {
+                        String side = batterySide(view);
+                        io.github.cnnceart.flymeears.bt.EncoSnapshot snapshot =
+                                io.github.cnnceart.flymeears.systemui.EncoSession.currentSnapshot();
+                        if (side != null && snapshot != null && charging(snapshot, side)) {
+                            view.setText(text.toString() + "⚡");
+                        }
                     }
                 }
                 return result;
@@ -103,6 +110,29 @@ public final class ArtworkHooks {
         } catch (Throwable error) {
             Log.e(TAG, "art: 设备中心电量占位 Hook 失败", error);
         }
+    }
+
+    private static String batterySide(android.widget.TextView view) {
+        android.content.Context context = view.getContext();
+        if (context == null || !"com.meizu.earphone".equals(context.getPackageName())) {
+            return null;
+        }
+        int id = view.getId();
+        for (String name : new String[]{"left_charge_tv", "right_charge_tv", "box_charge_tv"}) {
+            if (id == context.getResources().getIdentifier(name, "id", "com.meizu.earphone")) {
+                return name.startsWith("left") ? "left"
+                        : name.startsWith("right") ? "right" : "box";
+            }
+        }
+        return null;
+    }
+
+    private static boolean charging(io.github.cnnceart.flymeears.bt.EncoSnapshot snapshot, String side) {
+        return switch (side) {
+            case "left" -> snapshot.leftCharging;
+            case "right" -> snapshot.rightCharging;
+            default -> snapshot.caseCharging;
+        };
     }
 
     private static boolean isPluginBattery(android.widget.TextView view) {

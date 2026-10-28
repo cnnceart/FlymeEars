@@ -59,7 +59,8 @@ public final class PopupLauncher {
         return null;
     }
 
-    public static boolean show(Context context, BluetoothDevice device, int left, int right, int box) {
+    public static boolean show(Context context, BluetoothDevice device, int left, int right, int box,
+                               boolean leftCharging, boolean rightCharging, boolean boxCharging) {
         if (device == null) {
             Log.w(TAG, "popup: 没有可用的 OPPO/Enco 设备");
             return false;
@@ -70,7 +71,10 @@ public final class PopupLauncher {
                     Context.CONTEXT_INCLUDE_CODE | Context.CONTEXT_IGNORE_SECURITY);
             ClassLoader loader = earphone.getClassLoader();
 
-            Object mzfpDevice = buildDevice(loader, device, left, right, box);
+            Object mzfpDevice = buildDevice(loader, device,
+                    withCharging(left, leftCharging),
+                    withCharging(right, rightCharging),
+                    withCharging(box, boxCharging));
             Intent intent = baseIntent(loader, mzfpDevice);
 
             try {
@@ -98,6 +102,14 @@ public final class PopupLauncher {
         }
     }
 
+    /** 原生弹窗按 bit7 区分充电，数值部分会被 & 127 显示。 */
+    private static int withCharging(int percent, boolean charging) {
+        if (percent < 0) {
+            return percent;
+        }
+        return charging ? (percent | 0x80) : percent;
+    }
+
     private static String displayName(BluetoothDevice device) {
         String name = device.getName();
         return name == null || name.isEmpty() ? "OPPO Enco X2" : name;
@@ -106,7 +118,7 @@ public final class PopupLauncher {
     private static Intent baseIntent(ClassLoader loader, Object mzfpDevice) {
         return new Intent()
                 .setClassName(PACKAGE, ACTIVITY)
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_MULTIPLE_TASK)
                 .putExtra("DIALOG_TYPE_KEY", 1)
                 .putExtra("MZFP_DEVICE_KEY", (Parcelable) mzfpDevice)
                 .putExtra("IS_CONNECTED", true);
