@@ -13,12 +13,32 @@
         <activity
             android:name=".ui.MainActivity"
             android:exported="true"
-            android:label="FlymeEnco">
+            android:label="FlymeEnco" />
+
+        <!-- 桌面图标放在 alias 上，便于运行期隐藏/恢复。 -->
+        <activity-alias
+            android:name=".ui.Launcher"
+            android:targetActivity=".ui.MainActivity"
+            android:exported="true"
+            android:label="FlymeEnco"
+            android:icon="@android:drawable/ic_menu_compass">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-        </activity>
+        </activity-alias>
+
+        <!-- 隐藏桌面图标后的入口：快捷设置磁贴。 -->
+        <service
+            android:name=".ui.EncoTileService"
+            android:exported="true"
+            android:label="FlymeEnco"
+            android:icon="@android:drawable/ic_menu_compass"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
 
         <provider
             android:name=".popup.ArtProvider"

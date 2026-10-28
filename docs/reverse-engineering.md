@@ -151,6 +151,44 @@ popup: 已唤起原生弹窗
 均失败（`bt socket closed`）。`pm disable-user --user 0 com.heytap.headset` 后
 SDP 建链立即成功，说明**同一时刻只能有一个私有通道客户端**。
 
+## Flyme 原生设备中心（耳机空间）
+
+Flyme 有系统级「设备中心」，实现位于 SystemUI：
+
+| 类 | 作用 |
+|---|---|
+| `com.flyme.systemui.controls.DeviceCenterController` | 枚举 provider、白名单过滤、订阅收藏 |
+| `com.flyme.systemui.controls.data.repository.DeviceCenterRepository` | `ControlKey -> MzControlInfo` |
+| `com.flyme.systemui.qs.tileimpl.DeviceCenterQSTileViewImpl` | 控制中心磁贴 |
+| `com.flyme.dck.service`（独立包） | 设备中心后端服务 |
+
+它基于 **Android 标准 Device Controls**（`android.service.controls`）：
+`com.meizu.earphone` 的 `TWSControlService extends ControlsProviderService`
+就是魅族耳机往设备中心发布卡片的方式。
+
+### 白名单
+
+`DeviceCenterController.filterServicesByWhitelist()` 只放行：
+
+1. 系统应用（`ApplicationInfo.flags & (FLAG_SYSTEM|FLAG_UPDATED_SYSTEM_APP)`）；
+2. `R.array.config_controlsWhitelistPackages` 中配置的包。
+
+普通应用的 `ControlsProviderService` 会被过滤掉。该数组编译在 SystemUI 资源里，
+无法通过设置项修改，因此**需要 Hook `isServiceInWhitelist` 放行本模块**
+（模块已注入 SystemUI，成本极低）。
+
+### 结论
+
+要用「原生耳机空间」而不是自建 App，路线是：
+
+1. 本模块实现 `ControlsProviderService`，发布一张 OPPO Enco X2 卡片
+   （标题、电量副标题、配图 Icon、降噪动作）；
+2. 模块 Hook 白名单，让这张卡出现在设备中心；
+3. 控制动作（降噪切换）通过卡片下发，不需要打开我们的 App；
+4. App 只保留配置与诊断，桌面图标可隐藏。
+
+
+
 ## 其它线索
 
 - `com.meizu.earphone` 没有任何 `WindowManager` / overlay 代码，弹窗完全在

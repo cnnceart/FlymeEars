@@ -4,6 +4,7 @@ import android.Manifest;
 import android.app.Activity;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
+import android.content.ComponentName;
 import android.content.pm.PackageManager;
 import android.os.Build;
 import android.os.Bundle;
@@ -125,8 +126,14 @@ public final class MainActivity extends Activity implements EncoLink.Listener {
         actions.addView(button("降噪", v -> link.requestMode(EncoSnapshot.MODE_ANC)));
         actions.addView(button("通透", v -> link.requestMode(EncoSnapshot.MODE_TRANSPARENCY)));
         actions.addView(button("刷新", v -> link.refresh()));
-        actions.addView(button("断开", v -> link.stop()));
         actions.addView(button("原生弹窗", v -> showNativePopup()));
+
+        LinearLayout secondRow = new LinearLayout(this);
+        secondRow.setOrientation(LinearLayout.HORIZONTAL);
+        secondRow.setGravity(Gravity.CENTER_VERTICAL);
+        secondRow.addView(button("断开", v -> link.stop()));
+        secondRow.addView(button("图标", v -> toggleLauncherIcon()));
+        root.addView(secondRow);
 
         ScrollView scroll = new ScrollView(this);
         logView = new TextView(this);
@@ -150,6 +157,29 @@ public final class MainActivity extends Activity implements EncoLink.Listener {
 
     private int dp(int value) {
         return Math.round(value * getResources().getDisplayMetrics().density);
+    }
+
+    /**
+     * 隐藏/恢复桌面图标。
+     *
+     * <p>桌面入口是 activity-alias（{@code dev.flymeenco.ui.Launcher}），
+     * 隐藏后通过控制中心的「FlymeEnco」磁贴（或 adb）重新打开。
+     */
+    private void toggleLauncherIcon() {
+        ComponentName alias = new ComponentName(this, "dev.flymeenco.ui.Launcher");
+        PackageManager manager = getPackageManager();
+        boolean enabled = manager.getComponentEnabledSetting(alias)
+                != PackageManager.COMPONENT_ENABLED_STATE_DISABLED;
+        manager.setComponentEnabledSetting(alias,
+                enabled ? PackageManager.COMPONENT_ENABLED_STATE_DISABLED
+                        : PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
+                PackageManager.DONT_KILL_APP);
+        appendLog(enabled
+                ? "桌面图标已隐藏：把「FlymeEnco」磁贴加到控制中心即可再次打开"
+                : "桌面图标已恢复");
+        android.widget.Toast.makeText(this,
+                enabled ? "已隐藏图标，可用控制中心磁贴打开" : "已恢复图标",
+                android.widget.Toast.LENGTH_LONG).show();
     }
 
     private void requestBluetoothPermission() {
