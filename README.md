@@ -3,7 +3,8 @@
 让 **OPPO Enco X2** 接入 **魅族 21 Pro（Flyme 12.6 / Android 16）** 的系统级耳机体验：
 连接弹窗、音量面板降噪切换、电量显示，并逐步摆脱对「欢律」(`com.heytap.headset`) 的依赖。
 
-> 状态：**v0.1.0 骨架**。协议层已移植并通过单元测试；Flyme 注入点待真机探针与 APK 逆向确认。
+> 状态：**v0.2 弹窗已通**。连接弹窗可以原生呈现 OPPO Enco X2 的名称、配图与电量；
+> 降噪直连、音量面板接管与自动触发仍在进行中。
 
 ## 为什么需要它
 
@@ -42,7 +43,7 @@ Flyme 的系统耳机组件只识别魅族自家耳机：
 作用域（`META-INF/xposed/scope.list`）：`com.android.systemui`、
 `com.meizu.earphone`、`com.meizu.connectivitysettings`。
 
-## 已实现（v0.1.0）
+## 已实现（v0.2）
 
 | 模块 | 内容 | 验证方式 |
 |---|---|---|
@@ -51,8 +52,10 @@ Flyme 的系统耳机组件只识别魅族自家耳机：
 | `protocol/AncMapper` | 原始 ANC 值 ↔ Flyme 三态语义，含强度档位与固件特异性编码 | 单元测试 |
 | `bt/EncoLink` | RFCOMM 连接、初始查询、读循环、模式回读、状态广播 | 待真机 |
 | `bt/EncoSnapshot` | Flyme 语义状态（1 关闭 / 2 降噪 / 3 通透 + 三件套电量） | 待真机 |
-| `XposedInit` | libxposed 102 入口 + 三个目标包的类/方法探针 | 待真机 |
-| `ui/MainActivity` | 直连诊断页：枚举已配对 OPPO/Enco 设备、连接、切模式、看日志 | 待真机 |
+| `popup/PopupLauncher` | 构造 `MzfpDevice` + `MzfpModelInfoBean`，唤起 Flyme 原生弹窗 | **真机已验证** |
+| `popup/ArtProvider` | 以 `content://` 向弹窗提供充电盒配图（免联网） | **真机已验证** |
+| `hook/EarphonePopupHooks` | 宿主进程内替换左右单耳配图 | **真机已验证** |
+| `XposedInit` | libxposed 102 入口 + 目标包探针 | 真机已验证 |
 
 ## 构建
 

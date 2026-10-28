@@ -63,12 +63,37 @@ MzfpDailogActivity: DIALOG_TYPE_BLUETOOTH
 MzfpBluetoothDialogFragment: onViewCreated
 ```
 
+进一步走 `NETWORK_ENABLE=true` 路径（`MzfpModelInfoBean` + `content://` 配图），
+并在宿主进程 Hook 替换左右单耳后，弹窗完整呈现为：
+
+![原生弹窗最终效果](popup-native-2.png)
+
+- 名称：`OPPO Enco X2`（来自 `ModelData.modelName`）
+- 充电盒：模块 `ArtProvider` 提供的 `content://dev.flymeenco.art/enco_case.png`
+- 左右单耳：`EarphonePopupHooks` 替换 `iv_tws_left` / `iv_tws_right`
+- 电量：95 / 88 / 87（注入值）
+
+### 布局结构（`mzfp_device_connected_fragment.xml`）
+
+| id | 尺寸 | 原本 |
+|---|---|---|
+| `iv_tws_box` | 108×108 | `ic_tws_box`（魅族充电盒） |
+| `iv_tws_left` | 48×105 | `ic_tws_left`（魅族左耳） |
+| `iv_tws_right` | 48×105 | `ic_tws_right`（魅族右耳） |
+
+### 坑
+
+- 宿主 `com.meizu.earphone` 进程没有 `BLUETOOTH_CONNECT`，
+  Hook 里调用 `BluetoothDevice.getName()` 会抛 `SecurityException` 并打断弹窗初始化。
+  名称必须由 `ModelInfoBean` 提供，Hook 只做配图。
+- 更新模块 APK 后需要重启作用域进程（`am force-stop com.meizu.earphone`）才会加载新代码。
+
 ## 待解决
 
 | 项 | 方案 | 状态 |
 |---|---|---|
-| 名称显示为 MEIZU TWS 2311 | hook `MzfpDeviceConnectedFragment#onViewCreated` 后覆盖 `nameTextView` | 已实现，待 LSPosed 启用验证 |
-| 配图为魅族 PANDAER | hook 内替换成模块自带的中性耳机图 | 已实现，待验证 |
+| 名称显示为 MEIZU TWS 2311 | 走 `NETWORK_ENABLE=true` + `ModelData.modelName` | ✅ 已验证 |
+| 配图为魅族 PANDAER | 充电盒走 `content://` 配图；左右单耳由 Hook 替换 | ✅ 已验证 |
 | 自动触发 | SystemUI 侧监听 A2DP 连接 + 直连读电量后再拉起 | 待实现 |
 | 音量面板降噪图标 | 参考 flyme-mod 的 `QSVolumeControllerImpl` 注入点 | 待实现 |
 | 设备卡片电量 | `com.meizu.connectivitysettings` 待逆向 | 待实现 |
