@@ -1,4 +1,4 @@
-package dev.flymeenco.hook;
+package dev.flymeears.hook;
 
 import android.bluetooth.BluetoothDevice;
 import android.net.Uri;
@@ -10,7 +10,7 @@ import android.widget.TextView;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 
-import dev.flymeenco.popup.ArtProvider;
+import dev.flymeears.popup.ArtProvider;
 import io.github.libxposed.api.XposedModule;
 
 /**
@@ -30,7 +30,7 @@ import io.github.libxposed.api.XposedModule;
  */
 public final class EarphonePopupHooks {
 
-    private static final String TAG = "FlymeEnco";
+    private static final String TAG = "FlymeEars";
     private static final String FRAGMENT = "com.meizu.bluetooth.sdk.MzfpDeviceConnectedFragment";
 
     private EarphonePopupHooks() {
@@ -84,7 +84,7 @@ public final class EarphonePopupHooks {
             target.setOnClickListener(view -> {
                 try {
                     android.content.Intent intent = new android.content.Intent()
-                            .setClassName("dev.flymeenco", "dev.flymeenco.ui.MainActivity")
+                            .setClassName("dev.flymeears", "dev.flymeears.ui.MainActivity")
                             .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK);
                     view.getContext().startActivity(intent);
                     // 弹窗使命完成，收起来。

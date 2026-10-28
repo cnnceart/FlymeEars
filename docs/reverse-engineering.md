@@ -57,7 +57,7 @@ MzBluetoothService            （com.meizu.earphone，Service）
 日志：
 
 ```text
-FlymeEnco: popup: 已唤起原生弹窗 2C:4D:79:66:AE:74
+FlymeEars: popup: 已唤起原生弹窗 2C:4D:79:66:AE:74
 MzfpDailogActivity: handleIntent device id: 2C:4D:79:66:AE:74
 MzfpDailogActivity: DIALOG_TYPE_BLUETOOTH
 MzfpBluetoothDialogFragment: onViewCreated
@@ -69,7 +69,7 @@ MzfpBluetoothDialogFragment: onViewCreated
 ![原生弹窗最终效果](popup-native-2.png)
 
 - 名称：`OPPO Enco X2`（来自 `ModelData.modelName`）
-- 充电盒：模块 `ArtProvider` 提供的 `content://dev.flymeenco.art/enco_case.png`
+- 充电盒：模块 `ArtProvider` 提供的 `content://dev.flymeears.art/enco_case.png`
 - 左右单耳：`EarphonePopupHooks` 替换 `iv_tws_left` / `iv_tws_right`
 - 电量：95 / 88 / 87（注入值）
 

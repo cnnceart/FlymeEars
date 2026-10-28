@@ -1,4 +1,4 @@
-package dev.flymeenco.systemui;
+package dev.flymeears.systemui;
 
 import android.content.Context;
 import android.graphics.drawable.Drawable;
@@ -28,7 +28,7 @@ import io.github.libxposed.api.XposedModule;
  */
 public final class VolumePanelHooks {
 
-    private static final String TAG = "FlymeEnco";
+    private static final String TAG = "FlymeEars";
     private static final String OWNER = "com.flyme.systemui.volume.QSVolumeControllerImpl";
     private static final String ICON_PACKAGE = "com.meizu.earphone";
 

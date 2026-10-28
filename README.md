@@ -1,4 +1,4 @@
-# FlymeEnco
+# FlymeEars
 
 让 **OPPO Enco X2** 接入 **魅族 21 Pro（Flyme 12.6 / Android 16）** 的系统级耳机体验：
 连接弹窗、音量面板降噪切换、电量显示，并逐步摆脱对「欢律」(`com.heytap.headset`) 的依赖。
@@ -95,10 +95,10 @@ $env:JAVA_HOME = 'D:\software\jdk17'
 ```powershell
 adb install -r app\build\outputs\apk\debug\app-debug.apk
 # LSPosed 里启用模块，勾选三个作用域，重启手机（或重启 SystemUI）
-adb logcat -s FlymeEnco
+adb logcat -s FlymeEars
 ```
 
-- 打开「FlymeEnco」App → 连接 Enco X2 → 看是否出现"协议就绪"与电量；
+- 打开「FlymeEars」App → 连接 Enco X2 → 看是否出现"协议就绪"与电量；
 - 按音量键 → 观察音量面板是否出现降噪图标（下一阶段才会接管）；
 - 探针日志会打印 `QSVolumeControllerImpl` 的真实方法签名，作为下一步 Hook 的依据。
 

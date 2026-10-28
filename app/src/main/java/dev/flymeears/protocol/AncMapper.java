@@ -1,4 +1,4 @@
-package dev.flymeenco.protocol;
+package dev.flymeears.protocol;
 
 /**
  * OPPO 原始 ANC 值与 Flyme 三态语义之间的转换。

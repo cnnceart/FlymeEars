@@ -1,4 +1,4 @@
-package dev.flymeenco.ui;
+package dev.flymeears.ui;
 
 import android.Manifest;
 import android.app.Activity;
@@ -18,8 +18,8 @@ import android.widget.TextView;
 import java.util.ArrayList;
 import java.util.List;
 
-import dev.flymeenco.bt.EncoLink;
-import dev.flymeenco.bt.EncoSnapshot;
+import dev.flymeears.bt.EncoLink;
+import dev.flymeears.bt.EncoSnapshot;
 
 /**
  * 诊断页：不依赖 Flyme，先证明「直连耳机」这条链路可用。
@@ -66,28 +66,28 @@ public final class MainActivity extends Activity implements EncoLink.Listener {
     }
 
     private void autoLink() {
-        BluetoothDevice device = dev.flymeenco.popup.PopupLauncher.findEncoDevice();
+        BluetoothDevice device = dev.flymeears.popup.PopupLauncher.findEncoDevice();
         if (device == null) {
             appendLog("没有找到已配对的 OPPO/Enco 耳机");
             return;
         }
         appendLog("自动连接 " + device.getAddress());
         String name = device.getName();
-        dev.flymeenco.protocol.OppoWireConfig config =
+        dev.flymeears.protocol.OppoWireConfig config =
                 "compatible".equals(getIntent().getStringExtra("auto_config"))
-                        ? dev.flymeenco.protocol.OppoWireConfig.COMPATIBLE
-                        : dev.flymeenco.protocol.OppoWireConfig.forDeviceName(name);
+                        ? dev.flymeears.protocol.OppoWireConfig.COMPATIBLE
+                        : dev.flymeears.protocol.OppoWireConfig.forDeviceName(name);
         appendLog("ANC 映射：" + config.name());
         link.start(device.getAddress(), name, config, this);
     }
 
     private void showNativePopup() {
-        dev.flymeenco.bt.EncoSnapshot snapshot = link.snapshot();
+        dev.flymeears.bt.EncoSnapshot snapshot = link.snapshot();
         int left = snapshot != null && snapshot.leftBattery >= 0 ? snapshot.leftBattery : 88;
         int right = snapshot != null && snapshot.rightBattery >= 0 ? snapshot.rightBattery : 87;
         int box = snapshot != null && snapshot.caseBattery >= 0 ? snapshot.caseBattery : 95;
-        boolean shown = dev.flymeenco.popup.PopupLauncher.show(
-                this, dev.flymeenco.popup.PopupLauncher.findEncoDevice(), left, right, box);
+        boolean shown = dev.flymeears.popup.PopupLauncher.show(
+                this, dev.flymeears.popup.PopupLauncher.findEncoDevice(), left, right, box);
         appendLog(shown ? "已请求原生弹窗" : "原生弹窗请求失败（看 logcat）");
     }
 
@@ -104,7 +104,7 @@ public final class MainActivity extends Activity implements EncoLink.Listener {
         root.setPadding(padding, padding, padding, padding);
 
         TextView title = new TextView(this);
-        title.setText("FlymeEnco 直连诊断");
+        title.setText("FlymeEars 直连诊断");
         title.setTextSize(20);
         root.addView(title);
 
@@ -162,11 +162,11 @@ public final class MainActivity extends Activity implements EncoLink.Listener {
     /**
      * 隐藏/恢复桌面图标。
      *
-     * <p>桌面入口是 activity-alias（{@code dev.flymeenco.ui.Launcher}），
-     * 隐藏后通过控制中心的「FlymeEnco」磁贴（或 adb）重新打开。
+     * <p>桌面入口是 activity-alias（{@code dev.flymeears.ui.Launcher}），
+     * 隐藏后通过控制中心的「FlymeEars」磁贴（或 adb）重新打开。
      */
     private void toggleLauncherIcon() {
-        ComponentName alias = new ComponentName(this, "dev.flymeenco.ui.Launcher");
+        ComponentName alias = new ComponentName(this, "dev.flymeears.ui.Launcher");
         PackageManager manager = getPackageManager();
         boolean enabled = manager.getComponentEnabledSetting(alias)
                 != PackageManager.COMPONENT_ENABLED_STATE_DISABLED;
@@ -175,7 +175,7 @@ public final class MainActivity extends Activity implements EncoLink.Listener {
                         : PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
                 PackageManager.DONT_KILL_APP);
         appendLog(enabled
-                ? "桌面图标已隐藏：把「FlymeEnco」磁贴加到控制中心即可再次打开"
+                ? "桌面图标已隐藏：把「FlymeEars」磁贴加到控制中心即可再次打开"
                 : "桌面图标已恢复");
         android.widget.Toast.makeText(this,
                 enabled ? "已隐藏图标，可用控制中心磁贴打开" : "已恢复图标",

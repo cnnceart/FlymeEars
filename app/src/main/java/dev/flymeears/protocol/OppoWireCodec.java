@@ -1,4 +1,4 @@
-package dev.flymeenco.protocol;
+package dev.flymeears.protocol;
 
 import java.util.ArrayList;
 import java.util.List;

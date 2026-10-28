@@ -1,4 +1,4 @@
-package dev.flymeenco.popup;
+package dev.flymeears.popup;
 
 import android.content.ContentProvider;
 import android.content.ContentValues;
@@ -20,7 +20,7 @@ import java.io.InputStream;
  */
 public final class ArtProvider extends ContentProvider {
 
-    public static final String AUTHORITY = "dev.flymeenco.art";
+    public static final String AUTHORITY = "dev.flymeears.art";
 
     public static final String CASE = "enco_case.png";
     public static final String BUD_LEFT = "enco_bud_left.png";
@@ -43,10 +43,10 @@ public final class ArtProvider extends ContentProvider {
             name = PAIR;
         }
         int resource = switch (name) {
-            case CASE -> dev.flymeenco.R.raw.enco_case;
-            case BUD_LEFT -> dev.flymeenco.R.raw.enco_bud_left;
-            case BUD_RIGHT -> dev.flymeenco.R.raw.enco_bud_right;
-            default -> dev.flymeenco.R.raw.enco_art;
+            case CASE -> dev.flymeears.R.raw.enco_case;
+            case BUD_LEFT -> dev.flymeears.R.raw.enco_bud_left;
+            case BUD_RIGHT -> dev.flymeears.R.raw.enco_bud_right;
+            default -> dev.flymeears.R.raw.enco_art;
         };
         try {
             File cached = new File(appContext().getCacheDir(), name);

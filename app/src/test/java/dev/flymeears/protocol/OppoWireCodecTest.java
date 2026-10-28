@@ -1,4 +1,4 @@
-package dev.flymeenco.protocol;
+package dev.flymeears.protocol;
 
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;

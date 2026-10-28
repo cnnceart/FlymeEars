@@ -1,8 +1,8 @@
-package dev.flymeenco.bt;
+package dev.flymeears.bt;
 
 import java.util.Locale;
 
-import dev.flymeenco.protocol.AncMapper;
+import dev.flymeears.protocol.AncMapper;
 
 /** 一次耳机会话的可观察状态。Flyme 侧只依赖这里的数据，不直接碰协议。 */
 public final class EncoSnapshot {

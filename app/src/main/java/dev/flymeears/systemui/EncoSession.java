@@ -1,4 +1,4 @@
-package dev.flymeenco.systemui;
+package dev.flymeears.systemui;
 
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
@@ -10,9 +10,9 @@ import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
 
-import dev.flymeenco.bt.EncoLink;
-import dev.flymeenco.bt.EncoSnapshot;
-import dev.flymeenco.popup.PopupLauncher;
+import dev.flymeears.bt.EncoLink;
+import dev.flymeears.bt.EncoSnapshot;
+import dev.flymeears.popup.PopupLauncher;
 
 /**
  * SystemUI 进程内的耳机会话：发现 OPPO/Enco 输出设备 → 建立直连 →
@@ -23,7 +23,7 @@ import dev.flymeenco.popup.PopupLauncher;
  */
 public final class EncoSession implements EncoLink.Listener {
 
-    private static final String TAG = "FlymeEnco";
+    private static final String TAG = "FlymeEars";
 
     private static volatile EncoSession instance;
 
@@ -175,10 +175,10 @@ public final class EncoSession implements EncoLink.Listener {
             EncoSnapshot value = snapshot;
             int battery = value == null ? -1
                     : (value.leftBattery >= 0 ? value.leftBattery : value.rightBattery);
-            context.sendBroadcast(new android.content.Intent(dev.flymeenco.EncoIntents.ACTION_MODE)
-                    .putExtra(dev.flymeenco.EncoIntents.EXTRA_MODE, mode)
-                    .putExtra(dev.flymeenco.EncoIntents.EXTRA_BATTERY, battery)
-                    .setPackage("dev.flymeenco"));
+            context.sendBroadcast(new android.content.Intent(dev.flymeears.EncoIntents.ACTION_MODE)
+                    .putExtra(dev.flymeears.EncoIntents.EXTRA_MODE, mode)
+                    .putExtra(dev.flymeears.EncoIntents.EXTRA_BATTERY, battery)
+                    .setPackage("dev.flymeears"));
         } catch (Throwable error) {
             Log.w(TAG, "session: 广播模式失败", error);
         }

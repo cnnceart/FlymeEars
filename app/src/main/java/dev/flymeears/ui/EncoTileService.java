@@ -1,4 +1,4 @@
-package dev.flymeenco.ui;
+package dev.flymeears.ui;
 
 import android.app.PendingIntent;
 import android.content.Intent;
@@ -10,7 +10,7 @@ import android.service.quicksettings.TileService;
 /**
  * 快捷设置磁贴：桌面图标隐藏后的固定入口。
  *
- * <p>用户把「FlymeEnco」加到控制中心后，点一下即可打开诊断页。
+ * <p>用户把「FlymeEars」加到控制中心后，点一下即可打开诊断页。
  */
 public final class EncoTileService extends TileService {
 
@@ -22,7 +22,7 @@ public final class EncoTileService extends TileService {
             return;
         }
         tile.setState(Tile.STATE_INACTIVE);
-        tile.setLabel("FlymeEnco");
+        tile.setLabel("FlymeEars");
         if (tile.getIcon() == null) {
             tile.setIcon(Icon.createWithResource(this, android.R.drawable.ic_menu_compass));
         }

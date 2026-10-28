@@ -1,4 +1,4 @@
-package dev.flymeenco;
+package dev.flymeears;
 
 import android.util.Log;
 
@@ -15,11 +15,11 @@ import io.github.libxposed.api.XposedModule;
  */
 public final class XposedInit extends XposedModule {
 
-    private static final String TAG = "FlymeEnco";
+    private static final String TAG = "FlymeEars";
 
     @Override
     public void onModuleLoaded(ModuleLoadedParam param) {
-        log(Log.INFO, TAG, "FlymeEnco 模块已加载", null);
+        log(Log.INFO, TAG, "FlymeEars 模块已加载", null);
     }
 
     @Override
@@ -33,10 +33,10 @@ public final class XposedInit extends XposedModule {
         if ("com.android.systemui".equals(packageName)) {
             probe(loader, "com.flyme.systemui.volume.QSVolumeControllerImpl");
             installStep("session", () -> startSystemUiSession(loader));
-            installStep("volume", () -> dev.flymeenco.systemui.VolumePanelHooks.install(this, loader));
+            installStep("volume", () -> dev.flymeears.systemui.VolumePanelHooks.install(this, loader));
             installStep("deviceCenter", () -> allowDeviceCenter(loader));
         } else if ("com.meizu.earphone".equals(packageName)) {
-            dev.flymeenco.hook.EarphonePopupHooks.install(this, loader);
+            dev.flymeears.hook.EarphonePopupHooks.install(this, loader);
         } else if ("com.meizu.connectivitysettings".equals(packageName)) {
             probe(loader, "com.meizu.settings.bluetooth.BluetoothDeviceDetailFragment");
         }
@@ -45,12 +45,12 @@ public final class XposedInit extends XposedModule {
     /** 接收磁贴指令（走广播，避免再开一条 RFCOMM）。 */
     private void registerControlReceiver(android.app.Application application) {
         android.content.IntentFilter filter = new android.content.IntentFilter(
-                dev.flymeenco.EncoIntents.ACTION_CYCLE);
+                dev.flymeears.EncoIntents.ACTION_CYCLE);
         android.content.BroadcastReceiver receiver = new android.content.BroadcastReceiver() {
             @Override
             public void onReceive(android.content.Context context, android.content.Intent intent) {
-                dev.flymeenco.systemui.EncoSession session =
-                        dev.flymeenco.systemui.EncoSession.instance();
+                dev.flymeears.systemui.EncoSession session =
+                        dev.flymeears.systemui.EncoSession.instance();
                 if (session != null) {
                     session.cycleMode();
                     android.util.Log.i(TAG, "session: 磁贴触发模式切换");
@@ -81,7 +81,7 @@ public final class XposedInit extends XposedModule {
                 Object result = chain.proceed();
                 try {
                     android.app.Application application = (android.app.Application) chain.getThisObject();
-                    dev.flymeenco.systemui.EncoSession.start(application);
+                    dev.flymeears.systemui.EncoSession.start(application);
                     registerControlReceiver(application);
                 } catch (Throwable error) {
                     log(Log.ERROR, TAG, "session: 启动失败", error);
@@ -113,7 +113,7 @@ public final class XposedInit extends XposedModule {
                     Object info = chain.getArg(0);
                     Object component = serviceInfo.getField("componentName").get(info);
                     if (component instanceof android.content.ComponentName name
-                            && "dev.flymeenco".equals(name.getPackageName())) {
+                            && "dev.flymeears".equals(name.getPackageName())) {
                         return true;
                     }
                 } catch (Throwable ignored) {
@@ -121,7 +121,7 @@ public final class XposedInit extends XposedModule {
                 }
                 return chain.proceed();
             });
-            log(Log.INFO, TAG, "device center: 白名单已放行 dev.flymeenco", null);
+            log(Log.INFO, TAG, "device center: 白名单已放行 dev.flymeears", null);
         } catch (Throwable error) {
             log(Log.ERROR, TAG, "device center: 白名单 Hook 失败", error);
         }

@@ -1,4 +1,4 @@
-package dev.flymeenco.bt;
+package dev.flymeears.bt;
 
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
@@ -14,9 +14,9 @@ import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-import dev.flymeenco.protocol.AncMapper;
-import dev.flymeenco.protocol.OppoWireCodec;
-import dev.flymeenco.protocol.OppoWireConfig;
+import dev.flymeears.protocol.AncMapper;
+import dev.flymeears.protocol.OppoWireCodec;
+import dev.flymeears.protocol.OppoWireConfig;
 
 /**
  * 与 OPPO Enco 耳机建立私有 RFCOMM 通道，读取电量 / 降噪状态并下发控制。
@@ -26,7 +26,7 @@ import dev.flymeenco.protocol.OppoWireConfig;
  */
 public final class EncoLink {
 
-    private static final String TAG = "FlymeEnco";
+    private static final String TAG = "FlymeEars";
 
     /** OPPO Enco 私有 RFCOMM 服务。 */
     public static final UUID OPPO_RFCOMM_UUID =
@@ -67,7 +67,7 @@ public final class EncoLink {
         config = wireConfig;
         snapshot = EncoSnapshot.builder(address, name).build();
         running.set(true);
-        worker = new Thread(() -> run(address, name), "FlymeEnco-Link");
+        worker = new Thread(() -> run(address, name), "FlymeEars-Link");
         worker.start();
     }
 
@@ -193,7 +193,7 @@ public final class EncoLink {
                 }
                 refresh();
             }
-        }, "FlymeEnco-Tick");
+        }, "FlymeEars-Tick");
         thread.setDaemon(true);
         ticker = thread;
         thread.start();

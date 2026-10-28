@@ -1,4 +1,4 @@
-package dev.flymeenco.ui;
+package dev.flymeears.ui;
 
 import android.content.BroadcastReceiver;
 import android.content.Context;
@@ -9,8 +9,8 @@ import android.os.Build;
 import android.service.quicksettings.Tile;
 import android.service.quicksettings.TileService;
 
-import dev.flymeenco.EncoIntents;
-import dev.flymeenco.bt.EncoSnapshot;
+import dev.flymeears.EncoIntents;
+import dev.flymeears.bt.EncoSnapshot;
 
 /**
  * 「降噪」快捷磁贴：Flyme 控制中心里的原生入口。

@@ -1,4 +1,4 @@
-package dev.flymeenco.protocol;
+package dev.flymeears.protocol;
 
 /**
  * 型号族内的 ANC 值映射。

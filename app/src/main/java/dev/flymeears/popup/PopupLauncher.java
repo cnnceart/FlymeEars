@@ -1,4 +1,4 @@
-package dev.flymeenco.popup;
+package dev.flymeears.popup;
 
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
@@ -29,7 +29,7 @@ import java.util.Collections;
  */
 public final class PopupLauncher {
 
-    private static final String TAG = "FlymeEnco";
+    private static final String TAG = "FlymeEars";
     private static final String PACKAGE = "com.meizu.earphone";
     private static final String ACTIVITY = "com.meizu.bluetooth.sdk.MzfpDailogActivity";
 

@@ -3,11 +3,11 @@ plugins {
 }
 
 android {
-    namespace = "dev.flymeenco"
+    namespace = "dev.flymeears"
     compileSdk = 37
 
     defaultConfig {
-        applicationId = "dev.flymeenco"
+        applicationId = "dev.flymeears"
         minSdk = 31
         targetSdk = 36
         versionCode = 1

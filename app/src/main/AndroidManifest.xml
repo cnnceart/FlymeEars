@@ -5,7 +5,7 @@
     <uses-permission android:name="android.permission.BLUETOOTH_SCAN" />
 
     <application
-        android:label="FlymeEnco"
+        android:label="FlymeEars"
         android:icon="@android:drawable/ic_menu_compass"
         android:allowBackup="false"
         android:theme="@android:style/Theme.DeviceDefault.DayNight">
@@ -13,14 +13,14 @@
         <activity
             android:name=".ui.MainActivity"
             android:exported="true"
-            android:label="FlymeEnco" />
+            android:label="FlymeEars" />
 
         <!-- 桌面图标放在 alias 上，便于运行期隐藏/恢复。 -->
         <activity-alias
             android:name=".ui.Launcher"
             android:targetActivity=".ui.MainActivity"
             android:exported="true"
-            android:label="FlymeEnco"
+            android:label="FlymeEars"
             android:icon="@android:drawable/ic_menu_compass">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -32,7 +32,7 @@
         <service
             android:name=".ui.EncoTileService"
             android:exported="true"
-            android:label="FlymeEnco"
+            android:label="FlymeEars"
             android:icon="@android:drawable/ic_menu_compass"
             android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
             <intent-filter>
@@ -48,7 +48,7 @@
         <service
             android:name=".control.EncoControlService"
             android:exported="true"
-            android:label="FlymeEnco"
+            android:label="FlymeEars"
             android:permission="android.permission.BIND_CONTROLS">
             <intent-filter>
                 <action android:name="android.service.controls.ControlsProviderService" />
@@ -70,7 +70,7 @@
 
         <provider
             android:name=".popup.ArtProvider"
-            android:authorities="dev.flymeenco.art"
+            android:authorities="dev.flymeears.art"
             android:exported="true"
             android:grantUriPermissions="true" />
     </application>

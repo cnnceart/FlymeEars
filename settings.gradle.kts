@@ -16,5 +16,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "FlymeEnco"
+rootProject.name = "FlymeEars"
 include(":app")

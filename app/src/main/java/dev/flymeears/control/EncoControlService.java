@@ -1,4 +1,4 @@
-package dev.flymeenco.control;
+package dev.flymeears.control;
 
 import android.app.PendingIntent;
 import android.bluetooth.BluetoothAdapter;
@@ -18,9 +18,9 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.Flow;
 import java.util.function.Consumer;
 
-import dev.flymeenco.bt.EncoLink;
-import dev.flymeenco.bt.EncoSnapshot;
-import dev.flymeenco.ui.MainActivity;
+import dev.flymeears.bt.EncoLink;
+import dev.flymeears.bt.EncoSnapshot;
+import dev.flymeears.ui.MainActivity;
 
 /**
  * 把 OPPO Enco X2 发布成 Flyme 设备中心里的一张原生卡片。
@@ -38,7 +38,7 @@ import dev.flymeenco.ui.MainActivity;
 public final class EncoControlService extends ControlsProviderService implements EncoLink.Listener {
 
     public static final String CONTROL_ID = "enco-x2";
-    private static final String TAG = "FlymeEnco";
+    private static final String TAG = "FlymeEars";
     private static final int ICON_SIZE = 256;
 
     private record Subscriber(Flow.Subscriber<? super Control> subscriber, boolean stateful) {
@@ -165,14 +165,14 @@ public final class EncoControlService extends ControlsProviderService implements
             return new Control.StatelessBuilder(CONTROL_ID, appIntent)
                     .setTitle(title)
                     .setSubtitle(subtitle)
-                    .setStructure("FlymeEnco")
+                    .setStructure("FlymeEars")
                     .setCustomIcon(artwork)
                     .build();
         }
         return new Control.StatefulBuilder(CONTROL_ID, appIntent)
                 .setTitle(title)
                 .setSubtitle(subtitle)
-                .setStructure("FlymeEnco")
+                .setStructure("FlymeEars")
                 .setControlTemplate(new StatelessTemplate(CONTROL_ID))
                 .setStatus(Control.STATUS_OK)
                 .setCustomIcon(artwork)
@@ -200,7 +200,7 @@ public final class EncoControlService extends ControlsProviderService implements
         if (icon == null) {
             try {
                 Bitmap raw = BitmapFactory.decodeStream(getResources().openRawResource(
-                        dev.flymeenco.R.raw.enco_art));
+                        dev.flymeears.R.raw.enco_art));
                 if (raw != null) {
                     icon = Bitmap.createScaledBitmap(raw, ICON_SIZE, ICON_SIZE, true);
                 }
