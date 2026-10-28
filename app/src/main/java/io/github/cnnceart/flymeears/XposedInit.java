@@ -53,12 +53,27 @@ public final class XposedInit extends XposedModule {
         android.content.IntentFilter filter = new android.content.IntentFilter();
         filter.addAction(io.github.cnnceart.flymeears.EncoIntents.ACTION_CYCLE);
         filter.addAction(io.github.cnnceart.flymeears.EncoIntents.ACTION_SET_MODE);
+        filter.addAction(io.github.cnnceart.flymeears.EncoIntents.ACTION_PROBE);
         android.content.BroadcastReceiver receiver = new android.content.BroadcastReceiver() {
             @Override
             public void onReceive(android.content.Context context, android.content.Intent intent) {
                 io.github.cnnceart.flymeears.systemui.EncoSession session =
                         io.github.cnnceart.flymeears.systemui.EncoSession.instance();
                 if (session == null) {
+                    return;
+                }
+                if (io.github.cnnceart.flymeears.EncoIntents.ACTION_PROBE
+                        .equals(intent.getAction())) {
+                    int command = intent.getIntExtra(
+                            io.github.cnnceart.flymeears.EncoIntents.EXTRA_PROBE_CMD, 0);
+                    String hex = intent.getStringExtra(
+                            io.github.cnnceart.flymeears.EncoIntents.EXTRA_PROBE_PAYLOAD);
+                    byte[] payload = parseHex(hex);
+                    if (command != 0) {
+                        session.probe(command, payload);
+                        android.util.Log.i(TAG, "session: 探测命令 0x"
+                                + Integer.toHexString(command));
+                    }
                     return;
                 }
                 if (io.github.cnnceart.flymeears.EncoIntents.ACTION_SET_MODE
@@ -83,6 +98,25 @@ public final class XposedInit extends XposedModule {
         };
         application.registerReceiver(receiver, filter, android.content.Context.RECEIVER_EXPORTED);
         Log.i(TAG, "session: 磁贴指令接收器已注册");
+    }
+
+    /** "01 02 AA" → byte[]。 */
+    private static byte[] parseHex(String text) {
+        if (text == null) {
+            return new byte[0];
+        }
+        String clean = text.replace(" ", "").replace(",", "").trim();
+        if (clean.isEmpty()) {
+            return new byte[0];
+        }
+        if ((clean.length() & 1) != 0) {
+            return new byte[0];
+        }
+        byte[] out = new byte[clean.length() / 2];
+        for (int i = 0; i < out.length; i++) {
+            out[i] = (byte) Integer.parseInt(clean.substring(i * 2, i * 2 + 2), 16);
+        }
+        return out;
     }
 
     /** 每个注入点独立兜底，避免一个失败拖垮其它能力。 */

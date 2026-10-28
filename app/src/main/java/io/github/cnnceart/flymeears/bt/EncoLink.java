@@ -110,6 +110,23 @@ public final class EncoLink {
         }
     }
 
+    /** 调试/协议探测：直接写一帧（由 OppoWireCodec 组包）。 */
+    public void sendRaw(byte[] frame, String label) {
+        OutputStream stream = output;
+        if (stream == null || !running.get()) {
+            log("链路未就绪，无法发送 " + label);
+            return;
+        }
+        try {
+            stream.write(frame);
+            stream.flush();
+            log("探测发送 " + label + "：" + OppoWireCodec.hex(frame));
+        } catch (IOException error) {
+            log("探测发送失败：" + error.getClass().getSimpleName());
+            closeQuietly();
+        }
+    }
+
     public void refresh() {
         OutputStream stream = output;
         if (stream == null || !running.get()) {

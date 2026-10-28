@@ -148,6 +148,13 @@ public final class EncoSession implements EncoLink.Listener {
         link.requestMode(next);
     }
 
+    /** 协议探测：发送任意命令并打印回包（仅调试用）。 */
+    public void probe(int command, byte[] payload) {
+        byte[] frame = io.github.cnnceart.flymeears.protocol.OppoWireCodec.packet(command,
+                0xF0, payload == null ? new byte[0] : payload);
+        link.sendRaw(frame, String.format(java.util.Locale.ROOT, "0x%04X", command));
+    }
+
     /** 详情页点选具体模式时使用。 */
     public void requestMode(int mode) {
         link.requestMode(mode);
