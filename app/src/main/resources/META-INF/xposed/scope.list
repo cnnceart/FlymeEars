@@ -2,3 +2,6 @@
 com.android.systemui
 com.meizu.earphone
 com.meizu.connectivitysettings
+
+# 调试抓包用：只在需要记录官方 App 的 RFCOMM 帧时勾选，发布前移除。
+com.heytap.headset

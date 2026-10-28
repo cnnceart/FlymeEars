@@ -89,6 +89,8 @@ Flyme 的系统耳机组件只识别魅族自家耳机：
 
 作用域（`META-INF/xposed/scope.list`）：`com.android.systemui`、
 `com.meizu.earphone`、`com.meizu.connectivitysettings`。
+调试构建额外列出 `com.heytap.headset`，用于记录官方 App 的 RFCOMM 帧；
+不勾选就不生效，发布前会移除。
 
 ## 已实现（v0.2）
 

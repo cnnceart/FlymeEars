@@ -45,6 +45,9 @@ public final class XposedInit extends XposedModule {
             io.github.cnnceart.flymeears.hook.ArtworkHooks.installEarphone(this, loader);
         } else if ("com.meizu.connectivitysettings".equals(packageName)) {
             probe(loader, "com.meizu.settings.bluetooth.BluetoothDeviceDetailFragment");
+        } else if ("com.heytap.headset".equals(packageName)) {
+            installStep("heytapCapture", () -> io.github.cnnceart.flymeears.hook.HeytapCaptureHooks
+                    .install(this, loader));
         }
     }
 
