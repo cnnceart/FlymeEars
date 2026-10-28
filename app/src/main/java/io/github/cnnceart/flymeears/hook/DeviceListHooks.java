@@ -217,9 +217,6 @@ public final class DeviceListHooks {
 
     private static void decorateRow(Object holder) {
         String summary = ModuleState.summary();
-        if (summary == null) {
-            return;
-        }
         Object view;
         try {
             java.lang.reflect.Field field = holder.getClass().getField("itemView");
@@ -248,7 +245,15 @@ public final class DeviceListHooks {
         if (!looksLikeOurs(shownName)) {
             return;
         }
-        status.setText(summary);
+        if (summary != null) {
+            status.setText(summary);
+        }
+        int iconId = context.getResources().getIdentifier(
+                "icon", "id", context.getPackageName());
+        android.view.View iconView = iconId == 0 ? null : item.findViewById(iconId);
+        if (iconView instanceof android.widget.ImageView icon) {
+            Artwork.apply(icon, Artwork.CASE, 160);
+        }
     }
 
     /** 宿主可能没在自己的类里覆盖生命周期方法，沿父类往上找。 */

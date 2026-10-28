@@ -36,6 +36,10 @@ public final class EncoSession implements EncoLink.Listener {
     private String currentName;
     private boolean popupShown;
     private volatile EncoSnapshot snapshot;
+    /** 最近一次真实上报的电量：耳机在耳时充电盒不回报，沿用旧值比显示 -1% 好。 */
+    private int lastLeft = -1;
+    private int lastRight = -1;
+    private int lastCase = -1;
     private final java.util.List<Runnable> observers = new java.util.concurrent.CopyOnWriteArrayList<>();
     private volatile android.content.SharedPreferences preferences;
 
@@ -72,6 +76,7 @@ public final class EncoSession implements EncoLink.Listener {
         if (prefs != null) {
             local.preferences = prefs;
         }
+        local.loadLastBattery();
         local.attach();
     }
 
@@ -213,14 +218,53 @@ public final class EncoSession implements EncoLink.Listener {
     }
 
     /** 把整份状态推给耳机 App（详情页）和我们自己的 App（磁贴）。 */
+    private android.content.SharedPreferences batteryPrefs() {
+        return context.getSharedPreferences("flymeears_battery",
+                android.content.Context.MODE_PRIVATE);
+    }
+
+    /** 重启 SystemUI 后仍能显示最近一次真实电量（充电盒在耳时不上报）。 */
+    private void loadLastBattery() {
+        try {
+            android.content.SharedPreferences prefs = batteryPrefs();
+            lastLeft = prefs.getInt("left", -1);
+            lastRight = prefs.getInt("right", -1);
+            lastCase = prefs.getInt("case", -1);
+        } catch (Throwable error) {
+            Log.w(TAG, "session: 读取电量缓存失败", error);
+        }
+    }
+
+    private void saveLastBattery() {
+        try {
+            batteryPrefs().edit()
+                    .putInt("left", lastLeft)
+                    .putInt("right", lastRight)
+                    .putInt("case", lastCase)
+                    .apply();
+        } catch (Throwable error) {
+            Log.w(TAG, "session: 保存电量缓存失败", error);
+        }
+    }
+
     private void broadcastState(EncoSnapshot value) {
+        if (value.leftBattery >= 0) {
+            lastLeft = value.leftBattery;
+        }
+        if (value.rightBattery >= 0) {
+            lastRight = value.rightBattery;
+        }
+        if (value.caseBattery >= 0) {
+            lastCase = value.caseBattery;
+        }
+        saveLastBattery();
         try {
             android.content.Intent state = new android.content.Intent(
                     io.github.cnnceart.flymeears.EncoIntents.ACTION_STATE)
                     .putExtra(io.github.cnnceart.flymeears.EncoIntents.EXTRA_MODE, value.mode)
-                    .putExtra(io.github.cnnceart.flymeears.EncoIntents.EXTRA_LEFT, value.leftBattery)
-                    .putExtra(io.github.cnnceart.flymeears.EncoIntents.EXTRA_RIGHT, value.rightBattery)
-                    .putExtra(io.github.cnnceart.flymeears.EncoIntents.EXTRA_CASE, value.caseBattery)
+                    .putExtra(io.github.cnnceart.flymeears.EncoIntents.EXTRA_LEFT, lastLeft)
+                    .putExtra(io.github.cnnceart.flymeears.EncoIntents.EXTRA_RIGHT, lastRight)
+                    .putExtra(io.github.cnnceart.flymeears.EncoIntents.EXTRA_CASE, lastCase)
                     .putExtra(io.github.cnnceart.flymeears.EncoIntents.EXTRA_CONNECTED, value.connected)
                     .putExtra(io.github.cnnceart.flymeears.EncoIntents.EXTRA_NAME, currentName);
             context.sendBroadcast(new android.content.Intent(state).setPackage("com.meizu.earphone"));
