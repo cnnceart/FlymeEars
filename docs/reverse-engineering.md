@@ -88,6 +88,28 @@ MzfpBluetoothDialogFragment: onViewCreated
   名称必须由 `ModelInfoBean` 提供，Hook 只做配图。
 - 更新模块 APK 后需要重启作用域进程（`am force-stop com.meizu.earphone`）才会加载新代码。
 
+## 降噪控制（真机已验证）
+
+控制链路：
+
+```text
+「降噪」快捷磁贴 --broadcast--> SystemUI EncoSession --RFCOMM--> 耳机
+        ^                                   |
+        +----------- 模式变化广播 -----------+
+```
+
+实测（耳机佩戴状态）：
+
+```text
+session: 磁贴触发模式切换
+link: 已下发模式 降噪
+link: 帧 cmd=0x8404 payload=00
+link: 降噪模式：降噪
+```
+
+`0x8404 00` = 成功；耳机在充电盒中会返回 `0x0E`（无法开启 ANC），
+模块会打印"耳机拒绝切换，常见原因：在充电盒中或未佩戴"。
+
 ## 自动触发（已跑通）
 
 SystemUI 进程内的 `EncoSession` 监听音频输出设备，命中 OPPO/Enco 后自建 RFCOMM，
