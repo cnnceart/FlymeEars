@@ -143,6 +143,11 @@ public final class EncoSession implements EncoLink.Listener {
         link.requestMode(next);
     }
 
+    /** 详情页点选具体模式时使用。 */
+    public void requestMode(int mode) {
+        link.requestMode(mode);
+    }
+
     private void reconcile() {
         AudioManager audio = context.getSystemService(AudioManager.class);
         if (audio == null) {
@@ -193,6 +198,25 @@ public final class EncoSession implements EncoLink.Listener {
         }
     }
 
+    /** 把整份状态推给耳机 App（详情页）和我们自己的 App（磁贴）。 */
+    private void broadcastState(EncoSnapshot value) {
+        try {
+            android.content.Intent state = new android.content.Intent(
+                    com.cnnceart.flymeears.EncoIntents.ACTION_STATE)
+                    .putExtra(com.cnnceart.flymeears.EncoIntents.EXTRA_MODE, value.mode)
+                    .putExtra(com.cnnceart.flymeears.EncoIntents.EXTRA_LEFT, value.leftBattery)
+                    .putExtra(com.cnnceart.flymeears.EncoIntents.EXTRA_RIGHT, value.rightBattery)
+                    .putExtra(com.cnnceart.flymeears.EncoIntents.EXTRA_CASE, value.caseBattery)
+                    .putExtra(com.cnnceart.flymeears.EncoIntents.EXTRA_CONNECTED, value.connected)
+                    .putExtra(com.cnnceart.flymeears.EncoIntents.EXTRA_NAME, currentName);
+            context.sendBroadcast(new android.content.Intent(state).setPackage("com.meizu.earphone"));
+            context.sendBroadcast(new android.content.Intent(state)
+                    .setPackage(com.cnnceart.flymeears.BuildConfig.APPLICATION_ID));
+        } catch (Throwable error) {
+            Log.w(TAG, "session: 广播状态失败", error);
+        }
+    }
+
     private void broadcastMode(int mode) {
         try {
             EncoSnapshot value = snapshot;
@@ -240,6 +264,7 @@ public final class EncoSession implements EncoLink.Listener {
     public void onSnapshot(EncoSnapshot value) {
         snapshot = value;
         broadcastMode(value.mode);
+        broadcastState(value);
         for (Runnable observer : observers) {
             try {
                 main.post(observer);

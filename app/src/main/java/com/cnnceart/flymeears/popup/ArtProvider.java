@@ -20,7 +20,7 @@ import java.io.InputStream;
  */
 public final class ArtProvider extends ContentProvider {
 
-    public static final String AUTHORITY = "com.cnnceart.flymeears.art";
+    public static final String AUTHORITY = com.cnnceart.flymeears.BuildConfig.APPLICATION_ID + ".art";
 
     public static final String CASE = "enco_case.png";
     public static final String BUD_LEFT = "enco_bud_left.png";

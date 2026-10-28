@@ -70,7 +70,7 @@
 
         <provider
             android:name="com.cnnceart.flymeears.popup.ArtProvider"
-            android:authorities="com.cnnceart.flymeears.art"
+            android:authorities="${applicationId}.art"
             android:exported="true"
             android:grantUriPermissions="true" />
     </application>

@@ -38,24 +38,37 @@ public final class XposedInit extends XposedModule {
         } else if ("com.meizu.earphone".equals(packageName)) {
             com.cnnceart.flymeears.hook.EarphonePopupHooks.install(this, loader);
             com.cnnceart.flymeears.hook.DeviceListHooks.install(this, loader);
+            com.cnnceart.flymeears.hook.DeviceDetailHooks.install(this, loader);
         } else if ("com.meizu.connectivitysettings".equals(packageName)) {
             probe(loader, "com.meizu.settings.bluetooth.BluetoothDeviceDetailFragment");
         }
     }
 
-    /** 接收磁贴指令（走广播，避免再开一条 RFCOMM）。 */
+    /** 接收磁贴 / 详情页指令（走广播，避免再开一条 RFCOMM）。 */
     private void registerControlReceiver(android.app.Application application) {
-        android.content.IntentFilter filter = new android.content.IntentFilter(
-                com.cnnceart.flymeears.EncoIntents.ACTION_CYCLE);
+        android.content.IntentFilter filter = new android.content.IntentFilter();
+        filter.addAction(com.cnnceart.flymeears.EncoIntents.ACTION_CYCLE);
+        filter.addAction(com.cnnceart.flymeears.EncoIntents.ACTION_SET_MODE);
         android.content.BroadcastReceiver receiver = new android.content.BroadcastReceiver() {
             @Override
             public void onReceive(android.content.Context context, android.content.Intent intent) {
                 com.cnnceart.flymeears.systemui.EncoSession session =
                         com.cnnceart.flymeears.systemui.EncoSession.instance();
-                if (session != null) {
-                    session.cycleMode();
-                    android.util.Log.i(TAG, "session: 磁贴触发模式切换");
+                if (session == null) {
+                    return;
                 }
+                if (com.cnnceart.flymeears.EncoIntents.ACTION_SET_MODE
+                        .equals(intent.getAction())) {
+                    int mode = intent.getIntExtra(
+                            com.cnnceart.flymeears.EncoIntents.EXTRA_MODE, 0);
+                    if (mode != 0) {
+                        session.requestMode(mode);
+                        android.util.Log.i(TAG, "session: 详情页切换模式 " + mode);
+                    }
+                    return;
+                }
+                session.cycleMode();
+                android.util.Log.i(TAG, "session: 磁贴触发模式切换");
             }
         };
         application.registerReceiver(receiver, filter, android.content.Context.RECEIVER_EXPORTED);
