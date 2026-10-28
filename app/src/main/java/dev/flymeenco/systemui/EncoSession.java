@@ -33,6 +33,7 @@ public final class EncoSession implements EncoLink.Listener {
 
     private boolean audioCallbackRegistered;
     private String currentAddress;
+    private String currentName;
     private boolean popupShown;
     private volatile EncoSnapshot snapshot;
     private final java.util.List<Runnable> observers = new java.util.concurrent.CopyOnWriteArrayList<>();
@@ -86,8 +87,27 @@ public final class EncoSession implements EncoLink.Listener {
         }, main);
         audioCallbackRegistered = true;
         reconcile();
+        main.postDelayed(watchdog, WATCHDOG_INTERVAL);
         Log.i(TAG, "session: 已监听音频设备");
     }
+
+    /**
+     * 看门狗：耳机收进盒子会主动断开 RFCOMM，重试耗尽后音频回调不会再触发，
+     * 这里周期性补连，保证拿出来戴上时能自动恢复。
+     */
+    private final Runnable watchdog = new Runnable() {
+        @Override
+        public void run() {
+            String address = currentAddress;
+            if (address != null && !link.isRunning()) {
+                Log.i(TAG, "session: 补连 " + address);
+                link.start(address, currentName, EncoSession.this);
+            }
+            main.postDelayed(this, WATCHDOG_INTERVAL);
+        }
+    };
+
+    private static final long WATCHDOG_INTERVAL = 20_000L;
 
     public EncoSnapshot snapshot() {
         return snapshot;
@@ -134,6 +154,7 @@ public final class EncoSession implements EncoLink.Listener {
             }
             if (!address.equals(currentAddress)) {
                 currentAddress = address;
+                currentName = name;
                 popupShown = false;
                 Log.i(TAG, "session: 连接 " + name + "（" + address + "）");
                 link.start(address, name, this);
