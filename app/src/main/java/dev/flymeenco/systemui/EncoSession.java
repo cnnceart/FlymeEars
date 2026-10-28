@@ -149,6 +149,16 @@ public final class EncoSession implements EncoLink.Listener {
         }
     }
 
+    private void broadcastMode(int mode) {
+        try {
+            context.sendBroadcast(new android.content.Intent(dev.flymeenco.EncoIntents.ACTION_MODE)
+                    .putExtra(dev.flymeenco.EncoIntents.EXTRA_MODE, mode)
+                    .setPackage("dev.flymeenco"));
+        } catch (Throwable error) {
+            Log.w(TAG, "session: 广播模式失败", error);
+        }
+    }
+
     private static boolean looksLikeEnco(String name) {
         String normalized = name.toLowerCase(java.util.Locale.ROOT).replace(" ", "");
         return normalized.contains("oppo") || normalized.contains("enco");
@@ -181,6 +191,7 @@ public final class EncoSession implements EncoLink.Listener {
     @Override
     public void onSnapshot(EncoSnapshot value) {
         snapshot = value;
+        broadcastMode(value.mode);
         for (Runnable observer : observers) {
             try {
                 main.post(observer);

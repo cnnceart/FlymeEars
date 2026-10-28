@@ -86,11 +86,7 @@ public final class EncoControlService extends ControlsProviderService implements
             subscriber.onSubscribe(new Flow.Subscription() {
                 @Override
                 public void request(long n) {
-                    try {
-                        subscriber.onNext(build(stateful));
-                    } catch (Throwable error) {
-                        Log.w(TAG, "control: 推送初始控件失败", error);
-                    }
+                    emit(subscriber, stateful, "request");
                 }
 
                 @Override
@@ -98,8 +94,21 @@ public final class EncoControlService extends ControlsProviderService implements
                     subscribers.remove(entry);
                 }
             });
+            // 订阅当下先发一次：不同版本的框架有的等 request，有的只看首次 onNext。
+            emit(subscriber, stateful, "subscribe");
             ensureLink();
         };
+    }
+
+    private void emit(Flow.Subscriber<? super Control> subscriber, boolean stateful, String reason) {
+        try {
+            Control control = build(stateful);
+            subscriber.onNext(control);
+            Log.i(TAG, "control: 已推送(" + reason + ") " + control.getTitle()
+                    + " / " + control.getSubtitle());
+        } catch (Throwable error) {
+            Log.w(TAG, "control: 推送失败(" + reason + ")", error);
+        }
     }
 
     private void ensureLink() {

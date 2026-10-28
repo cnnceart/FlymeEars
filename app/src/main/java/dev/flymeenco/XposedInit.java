@@ -42,6 +42,25 @@ public final class XposedInit extends XposedModule {
         }
     }
 
+    /** 接收磁贴指令（走广播，避免再开一条 RFCOMM）。 */
+    private void registerControlReceiver(android.app.Application application) {
+        android.content.IntentFilter filter = new android.content.IntentFilter(
+                dev.flymeenco.EncoIntents.ACTION_CYCLE);
+        android.content.BroadcastReceiver receiver = new android.content.BroadcastReceiver() {
+            @Override
+            public void onReceive(android.content.Context context, android.content.Intent intent) {
+                dev.flymeenco.systemui.EncoSession session =
+                        dev.flymeenco.systemui.EncoSession.instance();
+                if (session != null) {
+                    session.cycleMode();
+                    android.util.Log.i(TAG, "session: 磁贴触发模式切换");
+                }
+            }
+        };
+        application.registerReceiver(receiver, filter, android.content.Context.RECEIVER_EXPORTED);
+        Log.i(TAG, "session: 磁贴指令接收器已注册");
+    }
+
     /** 每个注入点独立兜底，避免一个失败拖垮其它能力。 */
     private void installStep(String what, Runnable action) {
         try {
@@ -63,6 +82,7 @@ public final class XposedInit extends XposedModule {
                 try {
                     android.app.Application application = (android.app.Application) chain.getThisObject();
                     dev.flymeenco.systemui.EncoSession.start(application);
+                    registerControlReceiver(application);
                 } catch (Throwable error) {
                     log(Log.ERROR, TAG, "session: 启动失败", error);
                 }
