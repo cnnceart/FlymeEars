@@ -1,0 +1,419 @@
+package io.github.cnnceart.flymeears.hook;
+
+import android.app.Activity;
+import android.content.Context;
+import android.content.Intent;
+import android.media.AudioDeviceInfo;
+import android.media.AudioManager;
+import android.util.Log;
+
+import java.lang.ref.WeakReference;
+import java.lang.reflect.Constructor;
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
+
+import io.github.cnnceart.flymeears.EncoIntents;
+import io.github.cnnceart.flymeears.bt.EncoSnapshot;
+import io.github.libxposed.api.XposedModule;
+
+/**
+ * 让魅族耳机 App 的 SDK 层「以为」第三方耳机是一副已连接的魅族耳机。
+ *
+ * <p>不重绘任何界面：CfgActivity 的列表由
+ * {@code CfgBaseViewModel.loadConnectedStatusData} 根据
+ * {@code MzBluetoothWrapper.isConnected()} + {@code AudioFunctionStatusModel} +
+ * 能力集合生成。这里只替换这三样数据的来源，原生页面就会自己长出
+ * 电量 / 名称 / 降噪三态等设置项。
+ *
+ * <p>状态来自 SystemUI 会话的 {@link EncoIntents#ACTION_STATE} 广播，
+ * {@link ModuleState} 缓存；写入设置项时把点击转成
+ * {@link EncoIntents#ACTION_SET_MODE} 广播回 SystemUI。
+ */
+public final class SdkStateHooks {
+
+    private static final String TAG = "FlymeEars";
+    private static final String WRAPPER =
+            "com.meizu.earphone.audiodo.mzbluetooth.MzBluetoothWrapper";
+    private static final String DEVICE = "com.meizu.earphone.audiodo.model.AudioDevice";
+    private static final String STATUS =
+            "com.meizu.earphone.audiodo.model.AudioFunctionStatusModel";
+    private static final String BATTERY = "com.meizu.bluetooth.sdk.ElectricityOfDevice";
+    private static final String CFG_ACTIVITY =
+            "com.meizu.earphone.biz.configuration.activity.CfgActivity";
+
+    /** 原生「智能」降噪档位（l5.a 的 17）；X2 目前没有可用的强度映射。 */
+    private static final int ANC_INTENSITY_SMART = 17;
+
+    private static ClassLoader loader;
+    private static volatile WeakReference<Activity> cfgActivity = new WeakReference<>(null);
+    private static volatile Runnable cfgListener;
+    private static volatile Activity cfgListenerOwner;
+
+    private SdkStateHooks() {
+    }
+
+    public static void install(XposedModule module, ClassLoader classLoader) {
+        loader = classLoader;
+        try {
+            installConnected(module);
+            installAddress(module);
+            installStatusModel(module);
+            installBattery(module);
+            installAnc(module);
+            installCfgActivity(module);
+            Log.i(TAG, "sdk: 宿主 SDK 伪装 Hook 已挂载");
+        } catch (Throwable error) {
+            Log.e(TAG, "sdk: Hook 失败", error);
+        }
+    }
+
+    /** isConnected：第三方设备的连接态以 SystemUI 会话为准。 */
+    private static void installConnected(XposedModule module) throws Exception {
+        Class<?> wrapper = Class.forName(WRAPPER, false, loader);
+        Method method = wrapper.getDeclaredMethod("isConnected", String.class);
+        module.hook(method).intercept(chain -> {
+            String deviceId = (String) chain.getArg(0);
+            if (isOurs(deviceId)) {
+                boolean connected = ModuleState.hasState()
+                        ? ModuleState.connected()
+                        : audioRoutePresent(chain.getThisObject(), deviceId);
+                Log.i(TAG, "sdk: isConnected(" + deviceId + ") -> " + connected);
+                return connected;
+            }
+            return chain.proceed();
+        });
+    }
+
+    /** SDK 不认识第三方设备，地址查询返回 null 会拖垮详情页与设备中心。 */
+    private static void installAddress(XposedModule module) throws Exception {
+        Class<?> wrapper = Class.forName(WRAPPER, false, loader);
+        Method method = wrapper.getDeclaredMethod("getDeviceAddress", String.class);
+        module.hook(method).intercept(chain -> {
+            String deviceId = (String) chain.getArg(0);
+            if (isOurs(deviceId)) {
+                return DeviceListHooks.ourAddress();
+            }
+            return chain.proceed();
+        });
+    }
+
+    /** 首次读取状态时，把 SDK 查到的空值替换成我们的真实电量/名称/模式。 */
+    private static void installStatusModel(XposedModule module) throws Exception {
+        Class<?> wrapper = Class.forName(WRAPPER, false, loader);
+        Class<?> deviceType = Class.forName(DEVICE, false, loader);
+        Method method = wrapper.getDeclaredMethod("readStatusModelFromMeizuSDK", deviceType);
+        module.hook(method).intercept(chain -> {
+            Object result = chain.proceed();
+            Object device = chain.getArg(0);
+            if (isOurs(deviceId(device))) {
+                applyState(device);
+            }
+            return result;
+        });
+    }
+
+    /** 设备中心卡片（TWSControlService）读电量的入口。 */
+    private static void installBattery(XposedModule module) throws Exception {
+        Class<?> wrapper = Class.forName(WRAPPER, false, loader);
+        Method method = wrapper.getDeclaredMethod("queryBattery", String.class);
+        module.hook(method).intercept(chain -> {
+            String deviceId = (String) chain.getArg(0);
+            if (isOurs(deviceId) && ModuleState.hasState()) {
+                return battery();
+            }
+            return chain.proceed();
+        });
+    }
+
+    /** 原生降噪三态按钮：转成广播交给 SystemUI 会话下发 0x0404。 */
+    private static void installAnc(XposedModule module) throws Exception {
+        Class<?> wrapper = Class.forName(WRAPPER, false, loader);
+        Method switchMethod = wrapper.getDeclaredMethod("setAncSwitch", String.class, int.class);
+        module.hook(switchMethod).intercept(chain -> {
+            String deviceId = (String) chain.getArg(0);
+            if (isOurs(deviceId)) {
+                int mode = ((Number) chain.getArg(1)).intValue();
+                sendMode(chain.getThisObject(), mode);
+                Log.i(TAG, "sdk: 原生降噪切换 -> " + EncoSnapshot.modeName(mode));
+                return true;
+            }
+            return chain.proceed();
+        });
+
+        Method intensityMethod = wrapper.getDeclaredMethod("setAncMode", String.class, int.class);
+        module.hook(intensityMethod).intercept(chain -> {
+            String deviceId = (String) chain.getArg(0);
+            if (isOurs(deviceId)) {
+                // X2 的强度档位尚未验证，先保证「降噪」处于开启。
+                sendMode(chain.getThisObject(), EncoSnapshot.MODE_ANC);
+                Log.i(TAG, "sdk: 原生降噪强度 -> 统一按降噪处理");
+                return true;
+            }
+            return chain.proceed();
+        });
+    }
+
+    /**
+     * 详情页存活期间跟随 SystemUI 广播刷新原生列表；
+     * 若页面先以「未连接」样式渲染，则重新走一遍原生 loadDeviceData。
+     */
+    private static void installCfgActivity(XposedModule module) throws Exception {
+        Class<?> cfg = Class.forName(CFG_ACTIVITY, false, loader);
+        Method onCreate = cfg.getDeclaredMethod("onCreate", android.os.Bundle.class);
+        module.hook(onCreate).intercept(chain -> {
+            Object result = chain.proceed();
+            Log.i(TAG, "sdk: CfgActivity.onCreate 命中");
+            if (chain.getThisObject() instanceof Activity activity) {
+                watch(activity);
+                kick(activity);
+            }
+            return result;
+        });
+
+        Method onDestroy = findInherited(cfg, "onDestroy");
+        module.hook(onDestroy).intercept(chain -> {
+            Object result = chain.proceed();
+            if (chain.getThisObject() instanceof Activity activity) {
+                unwatch(activity);
+            }
+            return result;
+        });
+    }
+
+    /**
+     * 原生详情页要等 MzBluetoothService 的 onConnected 回调（isReady=true）才加载；
+     * 第三方设备永远等不到这个回调，所以这里按原生顺序主动触发一次。
+     */
+    private static void kick(Activity activity) {
+        Runnable load = () -> {
+            Log.i(TAG, "sdk: kick 详情页加载");
+            if (activity.isFinishing() || activity.isDestroyed()) {
+                return;
+            }
+            try {
+                call(activity, "refreshDeviceAddress");
+                call(activity, "setupDeviceData");
+                call(activity, "loadDeviceData");
+                Log.i(TAG, "sdk: 已主动触发原生详情页加载");
+            } catch (Throwable error) {
+                Log.w(TAG, "sdk: 触发展开失败", error);
+            }
+        };
+        android.view.View decor = activity.getWindow() == null
+                ? null : activity.getWindow().getDecorView();
+        if (decor == null) {
+            load.run();
+            return;
+        }
+        decor.postDelayed(load, 400L);
+        decor.postDelayed(load, 1600L);
+    }
+
+    private static void watch(Activity activity) {
+        unwatch(null);
+        ModuleState.ensure(activity);
+        Runnable listener = () -> refresh(activity);
+        cfgActivity = new WeakReference<>(activity);
+        cfgListener = listener;
+        cfgListenerOwner = activity;
+        ModuleState.addListener(listener);
+        // 主动问一次当前状态，避免打开详情页时还没有任何广播。
+        activity.sendBroadcast(new Intent(EncoIntents.ACTION_CYCLE)
+                .setPackage("com.android.systemui")
+                .putExtra(EncoIntents.EXTRA_QUERY_ONLY, true));
+    }
+
+    private static void unwatch(Activity activity) {
+        Activity owner = cfgListenerOwner;
+        if (owner == null || (activity != null && owner != activity)) {
+            return;
+        }
+        Runnable listener = cfgListener;
+        if (listener != null) {
+            ModuleState.removeListener(listener);
+        }
+        cfgListener = null;
+        cfgListenerOwner = null;
+        cfgActivity = new WeakReference<>(null);
+    }
+
+    private static void refresh(Activity activity) {
+        if (activity == null || activity.isFinishing() || activity.isDestroyed()) {
+            return;
+        }
+        try {
+            Object device = readField(activity, "device");
+            if (device == null) {
+                return;
+            }
+            applyState(device);
+            Object viewModel = call(activity, "getViewModel");
+            Object items = call(viewModel, "getItemMap");
+            boolean connectedStyle = items instanceof java.util.Map<?, ?> map && map.containsKey(1);
+            if (!connectedStyle) {
+                // 先以未连接样式渲染过：按原生逻辑重新加载一次。
+                call(activity, "loadDeviceData");
+            }
+            Object model = call(device, "n");
+            if (model != null) {
+                Method changed = findMethod(viewModel.getClass(), "refreshDateByChanged", 1);
+                changed.invoke(viewModel, model);
+            }
+        } catch (Throwable error) {
+            Log.w(TAG, "sdk: 刷新详情页失败", error);
+        }
+    }
+
+    /** 把 ModuleState 写进 AudioFunctionStatusModel。 */
+    private static void applyState(Object device) {
+        try {
+            Object model = call(device, "n");
+            if (model == null) {
+                return;
+            }
+            String name = ModuleState.name();
+            if (name != null && !name.isEmpty()) {
+                setField(model, name, "b", "f4507b");
+                setField(device, name, "d", "f4500d");
+            }
+            setField(model, battery(), "a", "f4506a");
+            int mode = ModuleState.mode();
+            if (mode == EncoSnapshot.MODE_OFF
+                    || mode == EncoSnapshot.MODE_ANC
+                    || mode == EncoSnapshot.MODE_TRANSPARENCY) {
+                setField(model, mode, "c", "f4508c");
+                if (mode == EncoSnapshot.MODE_ANC) {
+                    setField(model, ANC_INTENSITY_SMART, "d", "f4509d");
+                }
+            }
+            Log.i(TAG, "sdk: 状态模型 -> " + name + " / " + EncoSnapshot.modeName(mode));
+        } catch (Throwable error) {
+            Log.w(TAG, "sdk: 写状态模型失败", error);
+        }
+    }
+
+    private static Object battery() throws Exception {
+        Class<?> type = Class.forName(BATTERY, true, loader);
+        Constructor<?> constructor = type.getConstructor(int.class, boolean.class,
+                int.class, boolean.class, int.class, boolean.class);
+        return constructor.newInstance(
+                ModuleState.box(), false,
+                ModuleState.left(), false,
+                ModuleState.right(), false);
+    }
+
+    private static void sendMode(Object wrapper, int mode) {
+        try {
+            Context context = (Context) readField(wrapper, "context");
+            if (context == null) {
+                return;
+            }
+            context.sendBroadcast(new Intent(EncoIntents.ACTION_SET_MODE)
+                    .setPackage("com.android.systemui")
+                    .putExtra(EncoIntents.EXTRA_MODE, mode));
+        } catch (Throwable error) {
+            Log.w(TAG, "sdk: 下发模式失败", error);
+        }
+    }
+
+    /** ModuleState 还没收到广播时，用系统音频路由判断耳机是否真的在连着。 */
+    private static boolean audioRoutePresent(Object wrapper, String address) {
+        try {
+            Context context = (Context) readField(wrapper, "context");
+            if (context == null) {
+                return false;
+            }
+            AudioManager audio = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
+            if (audio == null) {
+                return false;
+            }
+            for (AudioDeviceInfo output : audio.getDevices(AudioManager.GET_DEVICES_OUTPUTS)) {
+                if (output.getType() != AudioDeviceInfo.TYPE_BLUETOOTH_A2DP
+                        && output.getType() != AudioDeviceInfo.TYPE_BLE_HEADSET) {
+                    continue;
+                }
+                if (address.equalsIgnoreCase(output.getAddress())) {
+                    return true;
+                }
+            }
+        } catch (Throwable error) {
+            Log.w(TAG, "sdk: 查询音频路由失败", error);
+        }
+        return false;
+    }
+
+    private static boolean isOurs(String deviceId) {
+        if (deviceId == null || deviceId.isEmpty()) {
+            return false;
+        }
+        String ours = DeviceListHooks.ourAddress();
+        return ours != null && ours.equalsIgnoreCase(deviceId);
+    }
+
+    private static String deviceId(Object device) {
+        try {
+            Object value = readField(device, "a", "f4497a");
+            return value == null ? null : String.valueOf(value);
+        } catch (Throwable error) {
+            return null;
+        }
+    }
+
+    /** jadx 的 fxxxxx 是别名，运行时字段多是单字母；两个名字都试。 */
+    private static Object readField(Object target, String... names) throws Exception {
+        for (String name : names) {
+            try {
+                Field field = target.getClass().getDeclaredField(name);
+                field.setAccessible(true);
+                return field.get(target);
+            } catch (NoSuchFieldException ignored) {
+                // 继续尝试下一个名字。
+            }
+        }
+        throw new NoSuchFieldException(String.join("/", names));
+    }
+
+    private static void setField(Object target, Object value, String... names) throws Exception {
+        for (String name : names) {
+            try {
+                Field field = target.getClass().getDeclaredField(name);
+                field.setAccessible(true);
+                field.set(target, value);
+                return;
+            } catch (NoSuchFieldException ignored) {
+                // 继续尝试下一个名字。
+            }
+        }
+        throw new NoSuchFieldException(String.join("/", names));
+    }
+
+    private static Object call(Object target, String name) throws Exception {
+        Method method = findMethod(target.getClass(), name, 0);
+        return method.invoke(target);
+    }
+
+    private static Method findMethod(Class<?> type, String name, int parameters) {
+        for (Class<?> current = type; current != null && current != Object.class;
+                current = current.getSuperclass()) {
+            for (Method method : current.getDeclaredMethods()) {
+                if (method.getName().equals(name) && method.getParameterCount() == parameters) {
+                    method.setAccessible(true);
+                    return method;
+                }
+            }
+        }
+        throw new IllegalStateException("找不到方法 " + name + "/" + parameters);
+    }
+
+    private static Method findInherited(Class<?> type, String name) throws NoSuchMethodException {
+        for (Class<?> current = type; current != null && current != Object.class;
+                current = current.getSuperclass()) {
+            try {
+                return current.getDeclaredMethod(name);
+            } catch (NoSuchMethodException ignored) {
+                // 继续往父类找。
+            }
+        }
+        throw new NoSuchMethodException(type.getName() + "." + name);
+    }
+}
