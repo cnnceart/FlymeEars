@@ -401,6 +401,13 @@ public final class DeviceListHooks {
         return resolvedAddress;
     }
 
+    /** 重命名后同步模块内的名称缓存，供匹配用。 */
+    static void updateName(String name) {
+        if (name != null && !name.isEmpty()) {
+            resolvedName = name;
+        }
+    }
+
     /** 当前第三方耳机显示名（无设备时为 null）。 */
     static String ourName() {
         resolveIdentity();

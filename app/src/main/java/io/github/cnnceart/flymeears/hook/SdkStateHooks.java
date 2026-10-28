@@ -52,6 +52,7 @@ public final class SdkStateHooks {
     private static volatile Runnable cardListener;
     private static volatile Object wrapperInstance;
     private static volatile Runnable wearListener;
+    private static boolean debugReceiverReady;
 
     private SdkStateHooks() {
     }
@@ -66,6 +67,7 @@ public final class SdkStateHooks {
             installAnc(module);
             installEq(module);
             installWearing(module);
+            installRename(module);
             installWearPush(module);
             installCfgActivity(module);
             installDeviceCenter(module);
@@ -240,12 +242,44 @@ public final class SdkStateHooks {
                         wearListener = SdkStateHooks::pushWear;
                         ModuleState.addListener(wearListener);
                     }
+                    registerDebugRename(app);
                 }
             } catch (Throwable error) {
                 Log.w(TAG, "sdk: 佩戴推送初始化失败", error);
             }
             return result;
         });
+    }
+
+    /** 调试用改名通道：直接调用原生 changeDeviceName，避免 adb 输入法丢字。 */
+    private static void registerDebugRename(android.app.Application app) {
+        if (debugReceiverReady) {
+            return;
+        }
+        try {
+            android.content.IntentFilter filter = new android.content.IntentFilter(
+                    EncoIntents.ACTION_DEBUG_RENAME);
+            app.registerReceiver(new android.content.BroadcastReceiver() {
+                @Override
+                public void onReceive(Context context, Intent intent) {
+                    String name = intent.getStringExtra(EncoIntents.EXTRA_DEBUG_NAME);
+                    Activity activity = cfgActivity.get();
+                    if (name == null || name.isEmpty() || activity == null) {
+                        return;
+                    }
+                    try {
+                        Method change = findMethod(activity.getClass(), "changeDeviceName", 1);
+                        change.invoke(activity, name);
+                        Log.i(TAG, "sdk: 调试改名 -> " + name);
+                    } catch (Throwable error) {
+                        Log.w(TAG, "sdk: 调试改名失败", error);
+                    }
+                }
+            }, filter, Context.RECEIVER_EXPORTED);
+            debugReceiverReady = true;
+        } catch (Throwable error) {
+            Log.w(TAG, "sdk: 注册调试改名失败", error);
+        }
     }
 
     private static void pushWear() {
@@ -269,6 +303,34 @@ public final class SdkStateHooks {
         } catch (Throwable error) {
             Log.w(TAG, "sdk: 推送佩戴状态失败", error);
         }
+    }
+
+    /** 原生「重命名」：第三方设备写不进耳机，但可以完整支持 App 侧改名。 */
+    private static void installRename(XposedModule module) throws Exception {
+        Class<?> wrapper = Class.forName(WRAPPER, false, loader);
+        Method method = wrapper.getDeclaredMethod("setDeviceName", String.class, String.class);
+        module.hook(method).intercept(chain -> {
+            String deviceId = (String) chain.getArg(0);
+            String name = (String) chain.getArg(1);
+            if (isOurs(deviceId) && name != null && !name.isEmpty()) {
+                try {
+                    Object device = DeviceListHooks.injectedDevice();
+                    if (device != null) {
+                        setField(device, name, "d", "f4500d");
+                        Object model = call(device, "n");
+                        if (model != null) {
+                            setField(model, name, "b", "f4507b");
+                        }
+                    }
+                    DeviceListHooks.updateName(name);
+                    Log.i(TAG, "sdk: 原生重命名 -> " + name);
+                } catch (Throwable error) {
+                    Log.w(TAG, "sdk: 重命名写回失败", error);
+                }
+                return true;
+            }
+            return chain.proceed();
+        });
     }
 
     private static Object singletonWrapper() {
