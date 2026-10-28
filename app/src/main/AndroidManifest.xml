@@ -40,7 +40,11 @@
             </intent-filter>
         </service>
 
-        <!-- Flyme 设备中心卡片（Android Device Controls） -->
+        <!--
+          设备中心卡片（Android Device Controls）。实测 Flyme 设备中心对 provider
+          加载有自己的门控（魅族自家 mznfcpay 也超时），卡片无法出现，故暂时停用；
+          将来启用时注意不要与 SystemUI 会话同时持有 RFCOMM。
+
         <service
             android:name=".control.EncoControlService"
             android:exported="true"
@@ -50,6 +54,7 @@
                 <action android:name="android.service.controls.ControlsProviderService" />
             </intent-filter>
         </service>
+        -->
 
         <!-- 控制中心「降噪」磁贴 -->
         <service

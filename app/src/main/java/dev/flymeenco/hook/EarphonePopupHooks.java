@@ -67,6 +67,36 @@ public final class EarphonePopupHooks {
         replace(root, "iv_tws_right", ArtProvider.BUD_RIGHT);
         hideMissingComponents(root, fragment);
         applyName(fragment);
+        applyFunctionButton(fragment);
+    }
+
+    /**
+     * 原生的「功能介绍」讲的是魅族耳机的功能，对 OPPO 耳机没有意义。
+     * 改成「耳机设置」并打开本模块的设置页，让弹窗成为可用的入口。
+     */
+    private static void applyFunctionButton(Object fragment) {
+        try {
+            Object button = field(fragment.getClass(), fragment, "functionButton");
+            if (!(button instanceof android.widget.Button target)) {
+                return;
+            }
+            target.setText("耳机设置");
+            target.setOnClickListener(view -> {
+                try {
+                    android.content.Intent intent = new android.content.Intent()
+                            .setClassName("dev.flymeenco", "dev.flymeenco.ui.MainActivity")
+                            .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK);
+                    view.getContext().startActivity(intent);
+                    // 弹窗使命完成，收起来。
+                    android.app.Activity activity = (android.app.Activity) view.getContext();
+                    activity.finish();
+                } catch (Throwable error) {
+                    Log.w(TAG, "popup hook: 打开设置失败", error);
+                }
+            });
+        } catch (Throwable error) {
+            Log.w(TAG, "popup hook: 改写入按钮失败", error);
+        }
     }
 
     /**
