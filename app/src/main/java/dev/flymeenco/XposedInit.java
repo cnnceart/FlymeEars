@@ -31,7 +31,7 @@ public final class XposedInit extends XposedModule {
         if ("com.android.systemui".equals(packageName)) {
             probe(loader, "com.flyme.systemui.volume.QSVolumeControllerImpl");
         } else if ("com.meizu.earphone".equals(packageName)) {
-            probe(loader, "com.meizu.bluetooth.sdk.MzBluetoothService");
+            dev.flymeenco.hook.EarphonePopupHooks.install(this, loader);
         } else if ("com.meizu.connectivitysettings".equals(packageName)) {
             probe(loader, "com.meizu.settings.bluetooth.BluetoothDeviceDetailFragment");
         }
