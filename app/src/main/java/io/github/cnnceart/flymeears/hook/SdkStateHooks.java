@@ -50,6 +50,8 @@ public final class SdkStateHooks {
     private static volatile Activity cfgListenerOwner;
     private static volatile Object remotePrefImpl;
     private static volatile Runnable cardListener;
+    private static volatile Object wrapperInstance;
+    private static volatile Runnable wearListener;
 
     private SdkStateHooks() {
     }
@@ -64,6 +66,7 @@ public final class SdkStateHooks {
             installAnc(module);
             installEq(module);
             installWearing(module);
+            installWearPush(module);
             installCfgActivity(module);
             installDeviceCenter(module);
             Log.i(TAG, "sdk: 宿主 SDK 伪装 Hook 已挂载");
@@ -79,6 +82,7 @@ public final class SdkStateHooks {
         module.hook(method).intercept(chain -> {
             String deviceId = (String) chain.getArg(0);
             if (isOurs(deviceId)) {
+                wrapperInstance = chain.getThisObject();
                 boolean connected = ModuleState.hasState()
                         ? ModuleState.connected()
                         : audioRoutePresent(chain.getThisObject(), deviceId);
@@ -221,6 +225,61 @@ public final class SdkStateHooks {
             }
             return chain.proceed();
         });
+    }
+
+    /** 把佩戴状态推给宿主的回调分发器，让 BaseActivity/CfgActivity 的提示逻辑生效。 */
+    private static void installWearPush(XposedModule module) throws Exception {
+        Class<?> application = Class.forName("android.app.Application", false, loader);
+        Method onCreate = application.getDeclaredMethod("onCreate");
+        module.hook(onCreate).intercept(chain -> {
+            Object result = chain.proceed();
+            try {
+                if (chain.getThisObject() instanceof android.app.Application app) {
+                    ModuleState.ensure(app);
+                    if (wearListener == null) {
+                        wearListener = SdkStateHooks::pushWear;
+                        ModuleState.addListener(wearListener);
+                    }
+                }
+            } catch (Throwable error) {
+                Log.w(TAG, "sdk: 佩戴推送初始化失败", error);
+            }
+            return result;
+        });
+    }
+
+    private static void pushWear() {
+        try {
+            Object wrapper = wrapperInstance;
+            if (wrapper == null) {
+                wrapper = singletonWrapper();
+                wrapperInstance = wrapper;
+            }
+            if (wrapper == null) {
+                return;
+            }
+            Object callback = readField(wrapper, "callbackHandler");
+            Object status = wearingStatus();
+            String deviceId = DeviceListHooks.ourAddress();
+            if (callback == null || status == null || deviceId == null) {
+                return;
+            }
+            findMethod(callback.getClass(), "earphoneWearingStatusChanged", 2)
+                    .invoke(callback, deviceId, status);
+        } catch (Throwable error) {
+            Log.w(TAG, "sdk: 推送佩戴状态失败", error);
+        }
+    }
+
+    private static Object singletonWrapper() {
+        try {
+            Class<?> companion = Class.forName(
+                    "com.meizu.earphone.audiodo.mzbluetooth.MzBluetoothWrapper$Companion",
+                    false, loader);
+            return findMethod(companion, "getInstance", 0).invoke(null);
+        } catch (Throwable error) {
+            return null;
+        }
     }
 
     private static Object wearingStatus() {
