@@ -33,6 +33,7 @@ public final class XposedInit extends XposedModule {
         if ("com.android.systemui".equals(packageName)) {
             probe(loader, "com.flyme.systemui.volume.QSVolumeControllerImpl");
             startSystemUiSession(loader);
+            allowDeviceCenter(loader);
         } else if ("com.meizu.earphone".equals(packageName)) {
             dev.flymeenco.hook.EarphonePopupHooks.install(this, loader);
         } else if ("com.meizu.connectivitysettings".equals(packageName)) {
@@ -58,6 +59,39 @@ public final class XposedInit extends XposedModule {
             log(Log.INFO, TAG, "session: 已挂载 SystemUIApplication", null);
         } catch (Throwable error) {
             log(Log.ERROR, TAG, "session: 挂载失败", error);
+        }
+    }
+
+    /**
+     * 放行设备中心的白名单。
+     *
+     * <p>{@code DeviceCenterController.isServiceInWhitelist} 只接受系统应用或
+     * {@code config_controlsWhitelistPackages} 里的包；该数组编译在 SystemUI 资源中，
+     * 无法通过设置修改，所以在这里放行本模块包名，让我们的 Device Controls 卡片可见。
+     */
+    private void allowDeviceCenter(ClassLoader loader) {
+        try {
+            Class<?> controller = Class.forName(
+                    "com.flyme.systemui.controls.DeviceCenterController", false, loader);
+            Class<?> serviceInfo = Class.forName(
+                    "com.android.systemui.controls.ControlsServiceInfo", false, loader);
+            Method check = controller.getDeclaredMethod("isServiceInWhitelist", serviceInfo);
+            hook(check).intercept(chain -> {
+                try {
+                    Object info = chain.getArg(0);
+                    Object component = serviceInfo.getField("componentName").get(info);
+                    if (component instanceof android.content.ComponentName name
+                            && "dev.flymeenco".equals(name.getPackageName())) {
+                        return true;
+                    }
+                } catch (Throwable ignored) {
+                    // 拿不到组件名时交回原逻辑。
+                }
+                return chain.proceed();
+            });
+            log(Log.INFO, TAG, "device center: 白名单已放行 dev.flymeenco", null);
+        } catch (Throwable error) {
+            log(Log.ERROR, TAG, "device center: 白名单 Hook 失败", error);
         }
     }
 

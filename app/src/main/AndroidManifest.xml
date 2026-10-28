@@ -40,6 +40,17 @@
             </intent-filter>
         </service>
 
+        <!-- Flyme 设备中心卡片（Android Device Controls） -->
+        <service
+            android:name=".control.EncoControlService"
+            android:exported="true"
+            android:label="FlymeEnco"
+            android:permission="android.permission.BIND_CONTROLS">
+            <intent-filter>
+                <action android:name="android.service.controls.ControlsProviderService" />
+            </intent-filter>
+        </service>
+
         <provider
             android:name=".popup.ArtProvider"
             android:authorities="dev.flymeenco.art"
