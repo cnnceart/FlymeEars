@@ -1,11 +1,16 @@
 # FlymeEars
 
-让 **OPPO Enco X2** 接入 **魅族 21 Pro（Flyme 12.6 / Android 16）** 的系统级耳机体验：
-连接弹窗、音量面板降噪切换、电量显示，并逐步摆脱对「欢律」(`com.heytap.headset`) 的依赖。
+把**第三方蓝牙耳机**接进**魅族耳机 App**（`com.meizu.earphone`）的 LSPosed 模块，
+首个目标是 **OPPO Enco X2**（魅族 21 Pro / Flyme 12.6 / Android 16）。
 
-> 状态：**v1.0 三条主线均已真机验证**——连接弹窗、降噪控制（控制中心磁贴）、电量，
-> 全部落在 Flyme 系统界面里；欢律已停用，走 OPPO 私有协议直连。
-> 设备中心卡片与蓝牙音量胶囊受 ROM 自身限制，暂未接入（详见文末）。
+> 状态：设备列表注入已真机验证（列表显示「OPPO Enco X2 / 已连接」）；
+> 原生连接弹窗、控制中心降噪磁贴已验证；详情页面板与扫描页发现进行中。
+>
+> 架构与取舍：[docs/architecture.md](docs/architecture.md)
+> 逆向细节：[docs/reverse-engineering.md](docs/reverse-engineering.md)
+>
+> 许可证：**GPL-3.0**（OPPO 协议与耳机渲染素材参考了同为 GPL-3.0 的 HyperEars / flyme-mod）。
+
 
 ## 能力矩阵（真机验证）
 
