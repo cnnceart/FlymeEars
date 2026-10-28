@@ -63,6 +63,7 @@ public final class SdkStateHooks {
             installBattery(module);
             installAnc(module);
             installEq(module);
+            installWearing(module);
             installCfgActivity(module);
             installDeviceCenter(module);
             Log.i(TAG, "sdk: 宿主 SDK 伪装 Hook 已挂载");
@@ -204,6 +205,38 @@ public final class SdkStateHooks {
             }
             return chain.proceed();
         });
+    }
+
+    /** 原生佩戴状态查询（0x0109 的 4/5/7 语义）。 */
+    private static void installWearing(XposedModule module) throws Exception {
+        Class<?> wrapper = Class.forName(WRAPPER, false, loader);
+        Method method = wrapper.getDeclaredMethod("queryWearingStatus", String.class);
+        module.hook(method).intercept(chain -> {
+            String deviceId = (String) chain.getArg(0);
+            if (isOurs(deviceId)) {
+                Object status = wearingStatus();
+                if (status != null) {
+                    return status;
+                }
+            }
+            return chain.proceed();
+        });
+    }
+
+    private static Object wearingStatus() {
+        try {
+            Class<?> type = Class.forName(
+                    "com.meizu.bluetooth.sdk.EarphoneWearingStatus", true, loader);
+            Object value = type.getConstructor(boolean.class, boolean.class,
+                            boolean.class, boolean.class)
+                    .newInstance(ModuleState.inBoxLeft(), ModuleState.wearLeft(),
+                            ModuleState.inBoxRight(), ModuleState.wearRight());
+            type.getMethod("setEffective", boolean.class).invoke(value, true);
+            return value;
+        } catch (Throwable error) {
+            Log.w(TAG, "sdk: 构造佩戴状态失败", error);
+            return null;
+        }
     }
 
     private static Object feature(String... names) throws Exception {
@@ -462,6 +495,11 @@ public final class SdkStateHooks {
             if (ModuleState.hasState()) {
                 findMethod(callback.getClass(), "onNoiseControlModeChanged", 2)
                         .invoke(callback, deviceId, ModuleState.mode());
+                Object wearing = wearingStatus();
+                if (wearing != null) {
+                    findMethod(callback.getClass(), "earphoneWearingStatusChanged", 2)
+                            .invoke(callback, deviceId, wearing);
+                }
             }
             Log.i(TAG, "sdk: 已向设备中心推送状态");
         } catch (Throwable error) {

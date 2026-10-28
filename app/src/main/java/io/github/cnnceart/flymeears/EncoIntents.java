@@ -28,6 +28,12 @@ public final class EncoIntents {
 
     public static final String EXTRA_EQ = "eq";
 
+    /** 佩戴/在盒状态（0x0109：4=在盒、5=出盒未戴、7=佩戴）。 */
+    public static final String EXTRA_WEAR_LEFT = "wear_left";
+    public static final String EXTRA_WEAR_RIGHT = "wear_right";
+    public static final String EXTRA_IN_BOX_LEFT = "inbox_left";
+    public static final String EXTRA_IN_BOX_RIGHT = "inbox_right";
+
     /** 只要求回推当前状态，不要切换模式（详情页打开时用）。 */
     public static final String EXTRA_QUERY_ONLY = "query_only";
 

@@ -275,6 +275,14 @@ public final class EncoSession implements EncoLink.Listener {
                     io.github.cnnceart.flymeears.EncoIntents.ACTION_STATE)
                     .putExtra(io.github.cnnceart.flymeears.EncoIntents.EXTRA_MODE, value.mode)
                     .putExtra(io.github.cnnceart.flymeears.EncoIntents.EXTRA_EQ, value.eqMode)
+                    .putExtra(io.github.cnnceart.flymeears.EncoIntents.EXTRA_WEAR_LEFT,
+                            value.leftStatus == 7)
+                    .putExtra(io.github.cnnceart.flymeears.EncoIntents.EXTRA_WEAR_RIGHT,
+                            value.rightStatus == 7)
+                    .putExtra(io.github.cnnceart.flymeears.EncoIntents.EXTRA_IN_BOX_LEFT,
+                            value.leftStatus == 4)
+                    .putExtra(io.github.cnnceart.flymeears.EncoIntents.EXTRA_IN_BOX_RIGHT,
+                            value.rightStatus == 4)
                     .putExtra(io.github.cnnceart.flymeears.EncoIntents.EXTRA_LEFT, lastLeft)
                     .putExtra(io.github.cnnceart.flymeears.EncoIntents.EXTRA_RIGHT, lastRight)
                     .putExtra(io.github.cnnceart.flymeears.EncoIntents.EXTRA_CASE, lastCase)

@@ -168,6 +168,7 @@ public final class EncoLink {
             stream.write(OppoWireCodec.QUERY_BATTERY_PACKET);
             stream.write(OppoWireCodec.QUERY_ANC_PACKET);
             stream.write(OppoWireCodec.packet(0x010F));
+            stream.write(OppoWireCodec.packet(0x0109));
             stream.flush();
         } catch (IOException error) {
             log("刷新失败：" + error.getClass().getSimpleName());
@@ -312,6 +313,7 @@ public final class EncoLink {
         stream.write(OppoWireCodec.QUERY_BATTERY_PACKET);
         stream.write(OppoWireCodec.QUERY_ANC_PACKET);
         stream.write(OppoWireCodec.packet(0x010F));
+        stream.write(OppoWireCodec.packet(0x0109));
         stream.flush();
     }
 
@@ -334,6 +336,15 @@ public final class EncoLink {
     private void handle(OppoWireCodec.Frame frame) {
         log("帧 cmd=0x" + String.format(java.util.Locale.ROOT, "%04X", frame.command())
                 + " payload=" + OppoWireCodec.hex(frame.payload()));
+        if (frame.command() == 0x8109 && frame.payload().length >= 2) {
+            applyComponentStatus(frame.payload(), 1);
+            return;
+        }
+        if (frame.command() == 0x0204 && frame.payload().length >= 2
+                && (frame.payload()[0] & 0xFF) == 0x02) {
+            applyComponentStatus(frame.payload(), 1);
+            return;
+        }
         if (frame.command() == 0x810F && frame.payload().length >= 2
                 && (frame.payload()[0] & 0xFF) == 0) {
             int eq = frame.payload()[1] & 0xFF;
@@ -410,6 +421,48 @@ public final class EncoLink {
 
         log("未识别帧 cmd=0x" + String.format(java.util.Locale.ROOT, "%04X", frame.command())
                 + " payload=" + OppoWireCodec.hex(frame.payload()));
+    }
+
+    /**
+     * 解析 <status=0> <count> <component> <value>… 的组件状态表。
+     * Enco X2 实测：4=在盒、5=出盒未戴、7=佩戴中（左右耳）；盒固定 4。
+     */
+    private void applyComponentStatus(byte[] payload, int headerLength) {
+        if (headerLength >= payload.length) {
+            return;
+        }
+        int count = payload[headerLength] & 0xFF;
+        int left = -1;
+        int right = -1;
+        for (int i = 0; i < count; i++) {
+            int base = headerLength + 1 + i * 2;
+            if (base + 1 >= payload.length) {
+                break;
+            }
+            int component = payload[base] & 0xFF;
+            int value = payload[base + 1] & 0xFF;
+            if (component == 0x01) {
+                left = value;
+            } else if (component == 0x02) {
+                right = value;
+            }
+        }
+        EncoSnapshot current = snapshot;
+        int previousLeft = current == null ? -1 : current.leftStatus;
+        int previousRight = current == null ? -1 : current.rightStatus;
+        int nextLeft = left >= 0 ? left : previousLeft;
+        int nextRight = right >= 0 ? right : previousRight;
+        if (nextLeft < 0 && nextRight < 0) {
+            return;
+        }
+        if (nextLeft == previousLeft && nextRight == previousRight) {
+            return;
+        }
+        log("佩戴状态：左=" + nextLeft + " 右=" + nextRight);
+        publish(EncoSnapshot.builder(snapshot)
+                .leftStatus(nextLeft)
+                .rightStatus(nextRight)
+                .build());
     }
 
     private static byte[] filterDebugNotifications(byte[] ids) {

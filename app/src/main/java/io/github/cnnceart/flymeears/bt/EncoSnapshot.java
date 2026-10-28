@@ -19,6 +19,9 @@ public final class EncoSnapshot {
     public final int mode;
     /** OPPO EQ 模式（0..3），-1 表示还没读到。 */
     public final int eqMode;
+    /** 0x0109 组件状态：4=在盒、5=出盒未戴、7=佩戴中；-1 未知。 */
+    public final int leftStatus;
+    public final int rightStatus;
     public final int leftBattery;
     public final int rightBattery;
     public final int caseBattery;
@@ -34,6 +37,8 @@ public final class EncoSnapshot {
         protocolReady = builder.protocolReady;
         mode = builder.mode;
         eqMode = builder.eqMode;
+        leftStatus = builder.leftStatus;
+        rightStatus = builder.rightStatus;
         leftBattery = builder.leftBattery;
         rightBattery = builder.rightBattery;
         caseBattery = builder.caseBattery;
@@ -91,6 +96,8 @@ public final class EncoSnapshot {
         boolean protocolReady;
         int mode;
         int eqMode = -1;
+        int leftStatus = -1;
+        int rightStatus = -1;
         int leftBattery = -1;
         int rightBattery = -1;
         int caseBattery = -1;
@@ -107,6 +114,8 @@ public final class EncoSnapshot {
                 protocolReady = source.protocolReady;
                 mode = source.mode;
                 eqMode = source.eqMode;
+                leftStatus = source.leftStatus;
+                rightStatus = source.rightStatus;
                 leftBattery = source.leftBattery;
                 rightBattery = source.rightBattery;
                 caseBattery = source.caseBattery;
@@ -134,6 +143,16 @@ public final class EncoSnapshot {
 
         public Builder eq(int value) {
             eqMode = value;
+            return this;
+        }
+
+        public Builder leftStatus(int value) {
+            leftStatus = value;
+            return this;
+        }
+
+        public Builder rightStatus(int value) {
+            rightStatus = value;
             return this;
         }
 
