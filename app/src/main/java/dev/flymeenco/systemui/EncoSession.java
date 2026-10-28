@@ -151,8 +151,12 @@ public final class EncoSession implements EncoLink.Listener {
 
     private void broadcastMode(int mode) {
         try {
+            EncoSnapshot value = snapshot;
+            int battery = value == null ? -1
+                    : (value.leftBattery >= 0 ? value.leftBattery : value.rightBattery);
             context.sendBroadcast(new android.content.Intent(dev.flymeenco.EncoIntents.ACTION_MODE)
                     .putExtra(dev.flymeenco.EncoIntents.EXTRA_MODE, mode)
+                    .putExtra(dev.flymeenco.EncoIntents.EXTRA_BATTERY, battery)
                     .setPackage("dev.flymeenco"));
         } catch (Throwable error) {
             Log.w(TAG, "session: 广播模式失败", error);

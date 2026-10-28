@@ -11,6 +11,9 @@ public final class EncoIntents {
 
     public static final String EXTRA_MODE = "mode";
 
+    /** 附加电量（左耳或整机电量，-1 表示未知）。 */
+    public static final String EXTRA_BATTERY = "battery";
+
     private EncoIntents() {
     }
 }

@@ -47,6 +47,7 @@ public final class EncoLink {
     private volatile EncoSnapshot snapshot;
     private volatile OppoWireConfig config = OppoWireConfig.STANDARD;
     private Thread worker;
+    private Thread ticker;
 
     public EncoSnapshot snapshot() {
         return snapshot;
@@ -72,6 +73,7 @@ public final class EncoLink {
 
     public void stop() {
         running.set(false);
+        stopTicker();
         closeQuietly();
         Thread current = worker;
         worker = null;
@@ -99,9 +101,8 @@ public final class EncoLink {
         try {
             stream.write(OppoWireCodec.setAnc(primary));
             stream.flush();
-            // 发送成功不等于生效，随后主动读回一次。
-            stream.write(OppoWireCodec.QUERY_ANC_PACKET);
-            stream.flush();
+            // 发送成功不等于生效：稍等片刻再读回，避免拿到切换前的旧状态。
+            main.postDelayed(this::refresh, 600);
             log("已下发模式 " + EncoSnapshot.modeName(flymeMode));
         } catch (IOException error) {
             log("模式下发失败：" + error.getClass().getSimpleName());
@@ -126,35 +127,83 @@ public final class EncoLink {
 
     private void run(String address, String name) {
         BluetoothSocket local = null;
-        try {
-            BluetoothAdapter adapter = BluetoothAdapter.getDefaultAdapter();
-            if (adapter == null) {
-                fail("设备不支持蓝牙");
-                return;
-            }
-            BluetoothDevice device = adapter.getRemoteDevice(address);
-            local = connect(device);
-            socket = local;
-            output = local.getOutputStream();
-            InputStream input = local.getInputStream();
-            log("RFCOMM 已连接：" + name + "（" + address + "）");
-            publish(EncoSnapshot.builder(snapshot).connected(true).build());
+        int attempt = 0;
+        while (running.get() && attempt < 3) {
+            attempt++;
+            try {
+                BluetoothAdapter adapter = BluetoothAdapter.getDefaultAdapter();
+                if (adapter == null) {
+                    fail("设备不支持蓝牙");
+                    return;
+                }
+                BluetoothDevice device = adapter.getRemoteDevice(address);
+                local = connect(device);
+                socket = local;
+                output = local.getOutputStream();
+                InputStream input = local.getInputStream();
+                log("RFCOMM 已连接：" + name + "（" + address + "）");
+                publish(EncoSnapshot.builder(snapshot).connected(true).build());
 
-            writeInitialQueries();
-            readLoop(input);
-        } catch (SecurityException error) {
-            fail("缺少蓝牙权限或被系统拒绝");
-        } catch (IOException error) {
-            if (running.get()) {
-                fail("连接失败：" + error.getClass().getSimpleName()
+                writeInitialQueries();
+                startTicker();
+                readLoop(input);
+                break;
+            } catch (SecurityException error) {
+                fail("缺少蓝牙权限或被系统拒绝");
+                break;
+            } catch (IOException error) {
+                if (!running.get()) {
+                    break;
+                }
+                log("连接失败（第 " + attempt + " 次）：" + error.getClass().getSimpleName()
                         + (error.getMessage() == null ? "" : " / " + error.getMessage()));
+                closeQuietly();
+                if (attempt >= 3) {
+                    fail("多次重连失败，已放弃");
+                    break;
+                }
+                try {
+                    Thread.sleep(2000);
+                } catch (InterruptedException interrupted) {
+                    break;
+                }
+            } finally {
+                closeQuietly();
             }
-        } finally {
-            closeQuietly();
-            if (running.get()) {
-                publish(EncoSnapshot.builder(snapshot).connected(false).protocolReady(false).build());
+        }
+        stopTicker();
+        if (running.get()) {
+            publish(EncoSnapshot.builder(snapshot).connected(false).protocolReady(false).build());
+        }
+        running.set(false);
+    }
+
+    /** 连接期间每 30 秒刷新一次电量与模式，避免长期显示旧值。 */
+    private void startTicker() {
+        stopTicker();
+        Thread thread = new Thread(() -> {
+            while (running.get() && socket != null) {
+                try {
+                    Thread.sleep(30_000L);
+                } catch (InterruptedException interrupted) {
+                    return;
+                }
+                if (!running.get() || socket == null) {
+                    return;
+                }
+                refresh();
             }
-            running.set(false);
+        }, "FlymeEnco-Tick");
+        thread.setDaemon(true);
+        ticker = thread;
+        thread.start();
+    }
+
+    private void stopTicker() {
+        Thread thread = ticker;
+        ticker = null;
+        if (thread != null) {
+            thread.interrupt();
         }
     }
 
@@ -234,6 +283,15 @@ public final class EncoLink {
     private void handle(OppoWireCodec.Frame frame) {
         log("帧 cmd=0x" + String.format(java.util.Locale.ROOT, "%04X", frame.command())
                 + " payload=" + OppoWireCodec.hex(frame.payload()));
+        if (frame.command() == 0x8404) {
+            int status = frame.payload().length > 0 ? frame.payload()[0] & 0xFF : -1;
+            if (status != 0) {
+                log("耳机拒绝切换（状态 0x"
+                        + String.format(java.util.Locale.ROOT, "%02X", status)
+                        + "），常见原因：耳机在充电盒中或未佩戴");
+            }
+            return;
+        }
         byte[] ids = OppoWireCodec.parseNotificationSupport(frame);
         if (ids != null) {
             StringBuilder hex = new StringBuilder();

@@ -24,7 +24,8 @@ public final class AncTileService extends TileService {
         @Override
         public void onReceive(Context context, Intent intent) {
             int mode = intent.getIntExtra(EncoIntents.EXTRA_MODE, 0);
-            applyMode(mode);
+            int battery = intent.getIntExtra(EncoIntents.EXTRA_BATTERY, -1);
+            applyMode(mode, battery);
         }
     };
 
@@ -37,7 +38,7 @@ public final class AncTileService extends TileService {
         } else {
             registerReceiver(modeReceiver, new IntentFilter(EncoIntents.ACTION_MODE));
         }
-        applyMode(0);
+        applyMode(0, -1);
     }
 
     @Override
@@ -56,7 +57,7 @@ public final class AncTileService extends TileService {
         sendBroadcast(new Intent(EncoIntents.ACTION_CYCLE).setPackage("com.android.systemui"));
     }
 
-    private void applyMode(int mode) {
+    private void applyMode(int mode, int battery) {
         Tile tile = getQsTile();
         if (tile == null) {
             return;
@@ -65,7 +66,11 @@ public final class AncTileService extends TileService {
             tile.setLabel("降噪");
             tile.setState(Tile.STATE_INACTIVE);
         } else {
-            tile.setLabel(EncoSnapshot.modeName(mode));
+            String label = EncoSnapshot.modeName(mode);
+            if (battery >= 0) {
+                label = label + " " + battery + "%";
+            }
+            tile.setLabel(label);
             tile.setState(mode == EncoSnapshot.MODE_ANC ? Tile.STATE_ACTIVE : Tile.STATE_INACTIVE);
         }
         if (tile.getIcon() == null) {
