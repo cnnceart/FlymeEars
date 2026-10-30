@@ -46,6 +46,33 @@ public final class HeytapCaptureHooks {
         } catch (Throwable error) {
             Log.e(TAG, PREFIX + "抓包 Hook 失败", error);
         }
+
+        try {
+            Method open = java.net.URL.class.getDeclaredMethod("openConnection");
+            module.hook(open).intercept(chain -> {
+                Log.i(TAG, PREFIX + "URL " + chain.getThisObject());
+                return chain.proceed();
+            });
+            Log.i(TAG, PREFIX + "URL 抓取 Hook 已挂载");
+        } catch (Throwable error) {
+            Log.e(TAG, PREFIX + "URL Hook 失败", error);
+        }
+
+        try {
+            Class<?> stringLoader = Class.forName(
+                    "com.bumptech.glide.load.model.StringLoader", false, loader);
+            Class<?> options = Class.forName(
+                    "com.bumptech.glide.load.Options", false, loader);
+            Method build = stringLoader.getDeclaredMethod(
+                    "buildLoadData", String.class, int.class, int.class, options);
+            module.hook(build).intercept(chain -> {
+                Log.i(TAG, PREFIX + "GLIDE " + chain.getArg(0));
+                return chain.proceed();
+            });
+            Log.i(TAG, PREFIX + "Glide 模型 Hook 已挂载");
+        } catch (Throwable error) {
+            Log.e(TAG, PREFIX + "Glide Hook 失败", error);
+        }
     }
 
     private static String label(BluetoothSocket socket) {
