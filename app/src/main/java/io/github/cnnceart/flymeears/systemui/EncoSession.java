@@ -12,6 +12,7 @@ import android.util.Log;
 
 import io.github.cnnceart.flymeears.bt.EncoLink;
 import io.github.cnnceart.flymeears.bt.EncoSnapshot;
+import io.github.cnnceart.flymeears.hook.ModuleState;
 import io.github.cnnceart.flymeears.popup.PopupLauncher;
 
 /**
@@ -40,7 +41,6 @@ public final class EncoSession implements EncoLink.Listener {
     private int lastLeft = -1;
     private int lastRight = -1;
     private int lastCase = -1;
-    private final java.util.List<Runnable> observers = new java.util.concurrent.CopyOnWriteArrayList<>();
     private volatile android.content.SharedPreferences preferences;
 
     private EncoSession(Context context) {
@@ -56,11 +56,6 @@ public final class EncoSession implements EncoLink.Listener {
     public static EncoSnapshot currentSnapshot() {
         EncoSession session = instance;
         return session == null ? null : session.snapshot;
-    }
-
-    /** 注册状态变化回调，用于音量面板重绘。 */
-    public void addObserver(Runnable observer) {
-        observers.add(observer);
     }
 
     public static void start(Context context) {
@@ -90,6 +85,7 @@ public final class EncoSession implements EncoLink.Listener {
         if (audioCallbackRegistered) {
             return;
         }
+        markSessionStart();
         AudioManager audio = context.getSystemService(AudioManager.class);
         if (audio == null) {
             return;
@@ -282,6 +278,7 @@ public final class EncoSession implements EncoLink.Listener {
             lastCase = value.caseBattery;
         }
         saveLastBattery();
+        persistState(value);
         try {
             android.content.Intent state = new android.content.Intent(
                     io.github.cnnceart.flymeears.EncoIntents.ACTION_STATE)
@@ -316,6 +313,7 @@ public final class EncoSession implements EncoLink.Listener {
 
     /** 断开时也要广播一次，宿主的详情页/弹窗才能收起。 */
     private void broadcastDisconnected() {
+        persistDisconnected();
         try {
             android.content.Intent state = new android.content.Intent(
                     io.github.cnnceart.flymeears.EncoIntents.ACTION_STATE)
@@ -348,17 +346,71 @@ public final class EncoSession implements EncoLink.Listener {
                 value.rightCharging, value.caseCharging));
     }
 
-    private void broadcastMode(int mode) {
+    /**
+     * 把当前状态写进远程偏好，供耳机 App 进程冷启动时预置。
+     *
+     * <p>耳机进程拿不到本进程的内存，只能读这份快照；真正的广播随后会覆盖它。
+     */
+    private void persistState(EncoSnapshot value) {
+        android.content.SharedPreferences prefs = preferences;
+        if (prefs == null || value == null) {
+            return;
+        }
         try {
-            EncoSnapshot value = snapshot;
-            int battery = value == null ? -1
-                    : (value.leftBattery >= 0 ? value.leftBattery : value.rightBattery);
-            context.sendBroadcast(new android.content.Intent(io.github.cnnceart.flymeears.EncoIntents.ACTION_MODE)
-                    .putExtra(io.github.cnnceart.flymeears.EncoIntents.EXTRA_MODE, mode)
-                    .putExtra(io.github.cnnceart.flymeears.EncoIntents.EXTRA_BATTERY, battery)
-                    .setPackage(io.github.cnnceart.flymeears.BuildConfig.APPLICATION_ID));
+            prefs.edit()
+                    .putBoolean(ModuleState.PREF_WRITTEN, true)
+                    .putBoolean(ModuleState.PREF_CONNECTED, value.connected)
+                    .putString(ModuleState.PREF_NAME, currentName)
+                    .putInt(ModuleState.PREF_MODE, value.mode)
+                    .putInt(ModuleState.PREF_EQ, value.eqMode)
+                    .putBoolean(ModuleState.PREF_WEAR_LEFT, value.leftStatus == 7)
+                    .putBoolean(ModuleState.PREF_WEAR_RIGHT, value.rightStatus == 7)
+                    .putBoolean(ModuleState.PREF_IN_BOX_LEFT, value.leftStatus == 4)
+                    .putBoolean(ModuleState.PREF_IN_BOX_RIGHT, value.rightStatus == 4)
+                    .putBoolean(ModuleState.PREF_LEFT_CHARGING, value.leftCharging)
+                    .putBoolean(ModuleState.PREF_RIGHT_CHARGING, value.rightCharging)
+                    .putBoolean(ModuleState.PREF_BOX_CHARGING, value.caseCharging)
+                    .putInt(ModuleState.PREF_LEFT, lastLeft)
+                    .putInt(ModuleState.PREF_RIGHT, lastRight)
+                    .putInt(ModuleState.PREF_BOX, lastCase)
+                    .apply();
         } catch (Throwable error) {
-            Log.w(TAG, "session: 广播模式失败", error);
+            Log.w(TAG, "session: 写状态快照失败", error);
+        }
+    }
+
+    /** SystemUI 刚启动时还不知道耳机状态，先把连接位清零，避免重启后沿用旧快照。 */
+    private void markSessionStart() {
+        android.content.SharedPreferences prefs = preferences;
+        if (prefs == null) {
+            return;
+        }
+        try {
+            prefs.edit()
+                    .putBoolean(ModuleState.PREF_WRITTEN, true)
+                    .putBoolean(ModuleState.PREF_CONNECTED, false)
+                    .apply();
+        } catch (Throwable error) {
+            Log.w(TAG, "session: 预置断开态失败", error);
+        }
+    }
+
+    /** 断开时把快照的 connected 位清零，电量保留（下次连接先显示旧值再刷新）。 */
+    private void persistDisconnected() {
+        android.content.SharedPreferences prefs = preferences;
+        if (prefs == null) {
+            return;
+        }
+        try {
+            prefs.edit()
+                    .putBoolean(ModuleState.PREF_WRITTEN, true)
+                    .putBoolean(ModuleState.PREF_CONNECTED, false)
+                    .putInt(ModuleState.PREF_LEFT, lastLeft)
+                    .putInt(ModuleState.PREF_RIGHT, lastRight)
+                    .putInt(ModuleState.PREF_BOX, lastCase)
+                    .apply();
+        } catch (Throwable error) {
+            Log.w(TAG, "session: 写断开快照失败", error);
         }
     }
 
@@ -394,15 +446,7 @@ public final class EncoSession implements EncoLink.Listener {
     @Override
     public void onSnapshot(EncoSnapshot value) {
         snapshot = value;
-        broadcastMode(value.mode);
         broadcastState(value);
-        for (Runnable observer : observers) {
-            try {
-                main.post(observer);
-            } catch (Throwable error) {
-                Log.w(TAG, "session: 通知观察者失败", error);
-            }
-        }
         if (popupShown || !value.connected || !value.protocolReady || !value.hasBattery()) {
             return;
         }

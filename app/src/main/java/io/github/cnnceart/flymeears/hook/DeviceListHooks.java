@@ -56,6 +56,7 @@ public final class DeviceListHooks {
             preferences = module.getRemotePreferences(PREFS);
             Log.i(TAG, "device list: 偏好 address=" + (preferences == null ? "null"
                     : preferences.getString("address", "null")));
+            ModuleState.seed(preferences);
         } catch (Throwable error) {
             Log.w(TAG, "device list: 读取远程偏好失败", error);
         }
