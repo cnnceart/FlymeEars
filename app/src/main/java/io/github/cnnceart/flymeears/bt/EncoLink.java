@@ -110,6 +110,30 @@ public final class EncoLink {
         }
     }
 
+    /** 设置降噪档位（魅族 17 智能 / 18 深度 / 19 均衡 / 20 轻度）。 */
+    public void requestAncLevel(int level) {
+        OutputStream stream = output;
+        if (stream == null || !running.get()) {
+            log("链路未就绪，无法切换降噪档位");
+            return;
+        }
+        int primary = AncMapper.levelToPrimary(level);
+        if (primary < 0) {
+            log("未知降噪档位：" + level);
+            return;
+        }
+        try {
+            stream.write(OppoWireCodec.setAnc(primary));
+            stream.flush();
+            main.postDelayed(this::refresh, 600);
+            log("已下发降噪档位 " + level + "（0x"
+                    + String.format(java.util.Locale.ROOT, "%02X", primary) + "）");
+        } catch (IOException error) {
+            log("降噪档位下发失败：" + error.getClass().getSimpleName());
+            closeQuietly();
+        }
+    }
+
     /** 调试/协议探测：直接写一帧（由 OppoWireCodec 组包）。 */
     public void sendRaw(byte[] frame, String label) {
         OutputStream stream = output;
@@ -453,8 +477,16 @@ public final class EncoLink {
         if (anc != null) {
             int mode = AncMapper.toFlymeMode(anc, config);
             if (mode != AncMapper.MODE_UNKNOWN) {
-                log("降噪模式：" + EncoSnapshot.modeName(mode));
-                publish(EncoSnapshot.builder(snapshot).protocolReady(true).mode(mode).build());
+                EncoSnapshot.Builder builder = EncoSnapshot.builder(snapshot)
+                        .protocolReady(true).mode(mode);
+                int level = AncMapper.primaryToLevel(anc.primary());
+                if (level > 0) {
+                    builder.ancLevel(level);
+                }
+                EncoSnapshot next = builder.build();
+                log("降噪模式：" + EncoSnapshot.modeName(mode)
+                        + (level > 0 ? "（档位 " + level + "）" : ""));
+                publish(next);
             }
             return;
         }

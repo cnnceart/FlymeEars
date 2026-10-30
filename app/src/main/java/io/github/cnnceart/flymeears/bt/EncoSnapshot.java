@@ -17,6 +17,8 @@ public final class EncoSnapshot {
     public final boolean connected;
     public final boolean protocolReady;
     public final int mode;
+    /** 降噪档位（魅族 17 智能 / 18 深度 / 19 均衡 / 20 轻度）；-1 未知。 */
+    public final int ancLevel;
     /** OPPO EQ 模式（0..3），-1 表示还没读到。 */
     public final int eqMode;
     /** 0x0109 组件状态：4=在盒、5=出盒未戴、7=佩戴中；-1 未知。 */
@@ -38,6 +40,7 @@ public final class EncoSnapshot {
         connected = builder.connected;
         protocolReady = builder.protocolReady;
         mode = builder.mode;
+        ancLevel = builder.ancLevel;
         eqMode = builder.eqMode;
         leftStatus = builder.leftStatus;
         rightStatus = builder.rightStatus;
@@ -98,6 +101,7 @@ public final class EncoSnapshot {
         boolean connected;
         boolean protocolReady;
         int mode;
+        int ancLevel = -1;
         int eqMode = -1;
         int leftStatus = -1;
         int rightStatus = -1;
@@ -117,6 +121,7 @@ public final class EncoSnapshot {
                 connected = source.connected;
                 protocolReady = source.protocolReady;
                 mode = source.mode;
+                ancLevel = source.ancLevel;
                 eqMode = source.eqMode;
                 leftStatus = source.leftStatus;
                 rightStatus = source.rightStatus;
@@ -143,6 +148,11 @@ public final class EncoSnapshot {
 
         public Builder mode(int value) {
             mode = value;
+            return this;
+        }
+
+        public Builder ancLevel(int value) {
+            ancLevel = value;
             return this;
         }
 

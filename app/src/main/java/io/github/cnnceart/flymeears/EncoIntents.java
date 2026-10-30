@@ -9,10 +9,14 @@ public final class EncoIntents {
     /** 详情页 → SystemUI：切到指定模式。 */
     public static final String ACTION_SET_MODE = "io.github.cnnceart.flymeears.action.SET_MODE";
 
+    /** 详情页「降噪方式」→ SystemUI：切到指定档位（魅族 17~20）。 */
+    public static final String ACTION_SET_ANC_LEVEL = "io.github.cnnceart.flymeears.action.SET_ANC_LEVEL";
+
     /** SystemUI → 宿主：完整状态。 */
     public static final String ACTION_STATE = "io.github.cnnceart.flymeears.action.STATE";
 
     public static final String EXTRA_MODE = "mode";
+    public static final String EXTRA_ANC_LEVEL = "anc_level";
     public static final String EXTRA_LEFT = "left";
     public static final String EXTRA_RIGHT = "right";
     public static final String EXTRA_CASE = "case";

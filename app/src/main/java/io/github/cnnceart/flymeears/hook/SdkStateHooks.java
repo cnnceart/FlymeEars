@@ -183,9 +183,9 @@ public final class SdkStateHooks {
         module.hook(intensityMethod).intercept(chain -> {
             String deviceId = (String) chain.getArg(0);
             if (isOurs(deviceId)) {
-                // X2 的强度档位尚未验证，先保证「降噪」处于开启。
-                sendMode(chain.getThisObject(), EncoSnapshot.MODE_ANC);
-                Log.i(TAG, "sdk: 原生降噪强度 -> 统一按降噪处理");
+                int level = ((Number) chain.getArg(1)).intValue();
+                sendAncLevel(chain.getThisObject(), level);
+                Log.i(TAG, "sdk: 原生降噪档位 -> " + level);
                 return true;
             }
             return chain.proceed();
@@ -597,7 +597,8 @@ public final class SdkStateHooks {
                     || mode == EncoSnapshot.MODE_TRANSPARENCY) {
                 setField(model, mode, "c", "f4508c");
                 if (mode == EncoSnapshot.MODE_ANC) {
-                    setField(model, ANC_INTENSITY_SMART, "d", "f4509d");
+                    int level = ModuleState.ancLevel();
+                    setField(model, level > 0 ? level : ANC_INTENSITY_SMART, "d", "f4509d");
                 }
             }
             int eq = ModuleState.eq();
@@ -631,6 +632,21 @@ public final class SdkStateHooks {
                     .putExtra(EncoIntents.EXTRA_MODE, mode));
         } catch (Throwable error) {
             Log.w(TAG, "sdk: 下发模式失败", error);
+        }
+    }
+
+    /** 降噪档位（17~20）：转成广播交给 SystemUI 会话下发 0x0404 的档位值。 */
+    private static void sendAncLevel(Object wrapper, int level) {
+        try {
+            Context context = (Context) readField(wrapper, "context");
+            if (context == null) {
+                return;
+            }
+            context.sendBroadcast(new Intent(EncoIntents.ACTION_SET_ANC_LEVEL)
+                    .setPackage("com.android.systemui")
+                    .putExtra(EncoIntents.EXTRA_ANC_LEVEL, level));
+        } catch (Throwable error) {
+            Log.w(TAG, "sdk: 下发降噪档位失败", error);
         }
     }
 

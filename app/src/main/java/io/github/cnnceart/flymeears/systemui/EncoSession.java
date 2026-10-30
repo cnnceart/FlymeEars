@@ -151,6 +151,11 @@ public final class EncoSession implements EncoLink.Listener {
         link.requestMode(mode);
     }
 
+    /** 详情页「降噪方式」四档。 */
+    public void requestAncLevel(int level) {
+        link.requestAncLevel(level);
+    }
+
     /** 查找耳机：响铃 / 停止。 */
     public void find(boolean on) {
         link.requestFind(on);
@@ -257,6 +262,7 @@ public final class EncoSession implements EncoLink.Listener {
             android.content.Intent state = new android.content.Intent(
                     io.github.cnnceart.flymeears.EncoIntents.ACTION_STATE)
                     .putExtra(io.github.cnnceart.flymeears.EncoIntents.EXTRA_MODE, value.mode)
+                    .putExtra(io.github.cnnceart.flymeears.EncoIntents.EXTRA_ANC_LEVEL, value.ancLevel)
                     .putExtra(io.github.cnnceart.flymeears.EncoIntents.EXTRA_EQ, value.eqMode)
                     .putExtra(io.github.cnnceart.flymeears.EncoIntents.EXTRA_WEAR_LEFT,
                             value.leftStatus == 7)

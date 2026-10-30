@@ -36,6 +36,7 @@ public final class ModuleState {
     private static volatile boolean connected;
     private static volatile String name;
     private static volatile int mode;
+    private static volatile int ancLevel = -1;
     private static volatile int eq = -1;
     private static volatile boolean wearLeft;
     private static volatile boolean wearRight;
@@ -82,6 +83,7 @@ public final class ModuleState {
             return;
         }
         mode = intent.getIntExtra(EncoIntents.EXTRA_MODE, 0);
+        ancLevel = intent.getIntExtra(EncoIntents.EXTRA_ANC_LEVEL, -1);
         eq = intent.getIntExtra(EncoIntents.EXTRA_EQ, -1);
         wearLeft = intent.getBooleanExtra(EncoIntents.EXTRA_WEAR_LEFT, false);
         wearRight = intent.getBooleanExtra(EncoIntents.EXTRA_WEAR_RIGHT, false);
@@ -138,6 +140,11 @@ public final class ModuleState {
 
     public static int mode() {
         return mode;
+    }
+
+    /** 降噪档位（17 智能 / 18 深度 / 19 均衡 / 20 轻度）；-1 未知。 */
+    public static int ancLevel() {
+        return ancLevel;
     }
 
     public static int eq() {

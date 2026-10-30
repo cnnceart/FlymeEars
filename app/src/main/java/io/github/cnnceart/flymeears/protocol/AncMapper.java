@@ -16,7 +16,40 @@ public final class AncMapper {
     /** 带强度档位的 ANC 回报，仍归入降噪。 */
     private static final int[] ANC_INTENSITY_VALUES = {0x10, 0x20, 0x40, 0x80};
 
+    /** 魅族原生「降噪方式」四档：智能 / 深度 / 均衡 / 轻度。 */
+    public static final int LEVEL_SMART = 17;
+    public static final int LEVEL_DEEP = 18;
+    public static final int LEVEL_BALANCE = 19;
+    public static final int LEVEL_LIGHT = 20;
+
     private AncMapper() {
+    }
+
+    /** 魅族档位 → OPPO 0x0404 的 primary；未知返回 -1。 */
+    public static int levelToPrimary(int level) {
+        return switch (level) {
+            case LEVEL_SMART -> 0x80;
+            case LEVEL_DEEP -> 0x40;
+            case LEVEL_BALANCE -> 0x20;
+            case LEVEL_LIGHT -> 0x10;
+            default -> -1;
+        };
+    }
+
+    /** OPPO primary → 魅族档位；不是档位值返回 -1。 */
+    public static int primaryToLevel(int primary) {
+        return switch (primary) {
+            case 0x80 -> LEVEL_SMART;
+            case 0x40 -> LEVEL_DEEP;
+            case 0x20 -> LEVEL_BALANCE;
+            case 0x10 -> LEVEL_LIGHT;
+            default -> -1;
+        };
+    }
+
+    /** 是否为四档之一的 primary（区别于 01/02/04 这类三态值）。 */
+    public static boolean isLevelPrimary(int primary) {
+        return primaryToLevel(primary) > 0;
     }
 
     /** 原始回报 → Flyme 模式；无法识别时返回 {@link #MODE_UNKNOWN}。 */

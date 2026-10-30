@@ -54,6 +54,7 @@ public final class XposedInit extends XposedModule {
         android.content.IntentFilter filter = new android.content.IntentFilter();
         filter.addAction(io.github.cnnceart.flymeears.EncoIntents.ACTION_CYCLE);
         filter.addAction(io.github.cnnceart.flymeears.EncoIntents.ACTION_SET_MODE);
+        filter.addAction(io.github.cnnceart.flymeears.EncoIntents.ACTION_SET_ANC_LEVEL);
         filter.addAction(io.github.cnnceart.flymeears.EncoIntents.ACTION_PROBE);
         filter.addAction(io.github.cnnceart.flymeears.EncoIntents.ACTION_SET_EQ);
         filter.addAction(io.github.cnnceart.flymeears.EncoIntents.ACTION_FIND);
@@ -110,6 +111,16 @@ public final class XposedInit extends XposedModule {
                     if (mode != 0) {
                         session.requestMode(mode);
                         android.util.Log.i(TAG, "session: 详情页切换模式 " + mode);
+                    }
+                    return;
+                }
+                if (io.github.cnnceart.flymeears.EncoIntents.ACTION_SET_ANC_LEVEL
+                        .equals(intent.getAction())) {
+                    int level = intent.getIntExtra(
+                            io.github.cnnceart.flymeears.EncoIntents.EXTRA_ANC_LEVEL, -1);
+                    if (level > 0) {
+                        session.requestAncLevel(level);
+                        android.util.Log.i(TAG, "session: 降噪档位 " + level);
                     }
                     return;
                 }
