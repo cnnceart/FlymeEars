@@ -287,7 +287,7 @@ public final class SdkStateHooks {
                 int codec = model == 1
                         ? io.github.cnnceart.flymeears.protocol.OppoWireCodec.CODEC_AAC
                         : io.github.cnnceart.flymeears.protocol.OppoWireCodec.CODEC_LHDC;
-                sendCodec(chain.getThisObject(), codec);
+                sendCodec(chain.getThisObject(), codec, false);
                 Log.i(TAG, "sdk: 高品质音频 -> " + model);
                 return null;
             }
@@ -297,9 +297,12 @@ public final class SdkStateHooks {
         Method lhdc = wrapper.getDeclaredMethod("setLhdcAudioMode", String.class, int.class);
         module.hook(lhdc).intercept(chain -> {
             if (isOurs((String) chain.getArg(0))) {
+                int mode = ((Number) chain.getArg(1)).intValue();
+                // 17 = 普通 LHDC，18 = Hi-Res（LHDC 5.0）。
+                boolean hiRes = mode == 18;
                 sendCodec(chain.getThisObject(),
-                        io.github.cnnceart.flymeears.protocol.OppoWireCodec.CODEC_LHDC);
-                Log.i(TAG, "sdk: LHDC 模式 -> " + chain.getArg(1));
+                        io.github.cnnceart.flymeears.protocol.OppoWireCodec.CODEC_LHDC, hiRes);
+                Log.i(TAG, "sdk: LHDC 模式 -> " + mode + (hiRes ? "（Hi-Res）" : ""));
                 return null;
             }
             return chain.proceed();
@@ -752,6 +755,7 @@ public final class SdkStateHooks {
             } else if (codec == io.github.cnnceart.flymeears.protocol.OppoWireCodec.CODEC_AAC) {
                 setField(model, 1, "o", "f4517o");
             }
+            setField(model, ModuleState.hiRes() ? 18 : 17, "p", "f4518p");
             Log.i(TAG, "sdk: 状态模型 -> " + name + " / " + EncoSnapshot.modeName(mode));
         } catch (Throwable error) {
             Log.w(TAG, "sdk: 写状态模型失败", error);

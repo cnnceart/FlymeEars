@@ -346,7 +346,8 @@ public final class EncoSession implements EncoLink.Listener {
                             dualConnection)
                     .putExtra(io.github.cnnceart.flymeears.EncoIntents.EXTRA_PERSONAL_SOUND,
                             personalSound)
-                    .putExtra(io.github.cnnceart.flymeears.EncoIntents.EXTRA_CODEC, codecType)
+                    .putExtra(io.github.cnnceart.flymeears.EncoIntents.EXTRA_CODEC,
+                            value.codecType >= 0 ? value.codecType : codecType)
                     .putExtra(io.github.cnnceart.flymeears.EncoIntents.EXTRA_HI_RES, hiRes)
                     .putExtra(io.github.cnnceart.flymeears.EncoIntents.EXTRA_WEAR_LEFT,
                             value.leftStatus == 7)
