@@ -43,6 +43,14 @@ public final class SdkStateHooks {
 
     /** 原生「智能」降噪档位（l5.a 的 17）；X2 目前没有可用的强度映射。 */
     private static final int ANC_INTENSITY_SMART = 17;
+    /**
+     * 用户刚下发降噪后的一小段时间内不要把状态回写进模型。
+     *
+     * <p>页面重新渲染会把分段选择器设成模型值，这个程序性选中又会触发一次
+     * {@code setAncSwitch}，形成「刚点降噪 → 回读还是关闭 → 又发一次关闭」的回声。
+     */
+    private static final long ANC_SETTLE_MS = 1500L;
+    private static volatile long ancCommandAt;
 
     private static ClassLoader loader;
     private static volatile WeakReference<Activity> cfgActivity = new WeakReference<>(null);
@@ -173,6 +181,7 @@ public final class SdkStateHooks {
             String deviceId = (String) chain.getArg(0);
             if (isOurs(deviceId)) {
                 int mode = ((Number) chain.getArg(1)).intValue();
+                ancCommandAt = android.os.SystemClock.elapsedRealtime();
                 sendMode(chain.getThisObject(), mode);
                 Log.i(TAG, "sdk: 原生降噪切换 -> " + EncoSnapshot.modeName(mode));
                 return true;
@@ -185,6 +194,7 @@ public final class SdkStateHooks {
             String deviceId = (String) chain.getArg(0);
             if (isOurs(deviceId)) {
                 int level = ((Number) chain.getArg(1)).intValue();
+                ancCommandAt = android.os.SystemClock.elapsedRealtime();
                 sendAncLevel(chain.getThisObject(), level);
                 Log.i(TAG, "sdk: 原生降噪档位 -> " + level);
                 return true;
@@ -607,10 +617,12 @@ public final class SdkStateHooks {
                 setField(device, name, "d", "f4500d");
             }
             setField(model, battery(), "a", "f4506a");
+            boolean ancSettling = android.os.SystemClock.elapsedRealtime() - ancCommandAt
+                    < ANC_SETTLE_MS;
             int mode = ModuleState.mode();
-            if (mode == EncoSnapshot.MODE_OFF
+            if (!ancSettling && (mode == EncoSnapshot.MODE_OFF
                     || mode == EncoSnapshot.MODE_ANC
-                    || mode == EncoSnapshot.MODE_TRANSPARENCY) {
+                    || mode == EncoSnapshot.MODE_TRANSPARENCY)) {
                 setField(model, mode, "c", "f4508c");
                 if (mode == EncoSnapshot.MODE_ANC) {
                     int level = ModuleState.ancLevel();
