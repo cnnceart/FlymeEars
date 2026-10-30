@@ -103,6 +103,11 @@ public final class EncoSession implements EncoLink.Listener {
     private final Runnable watchdog = new Runnable() {
         @Override
         public void run() {
+            if (paused()) {
+                releaseForPause();
+                main.postDelayed(this, WATCHDOG_INTERVAL);
+                return;
+            }
             String address = currentAddress;
             if (address != null && !link.isRunning()) {
                 Log.i(TAG, "session: 补连 " + address);
@@ -111,6 +116,35 @@ public final class EncoSession implements EncoLink.Listener {
             main.postDelayed(this, WATCHDOG_INTERVAL);
         }
     };
+
+    /**
+     * 调试开关：{@code debug.flymeears.pause=1} 时让出 RFCOMM。
+     *
+     * <p>抓欢律（com.heytap.headset）的协议帧时用：官方 App 和本模块都会抢占
+     * 耳机唯一的 RFCOMM 连接，暂停本会话后官方 App 才能稳定连上。
+     */
+    private static boolean paused() {
+        try {
+            Class<?> props = Class.forName("android.os.SystemProperties");
+            Object value = props.getMethod("get", String.class, String.class)
+                    .invoke(null, "debug.flymeears.pause", "0");
+            return "1".equals(value);
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
+    private void releaseForPause() {
+        if (currentAddress == null && !link.isRunning()) {
+            return;
+        }
+        Log.i(TAG, "session: 调试暂停，释放 RFCOMM");
+        broadcastDisconnected();
+        currentAddress = null;
+        popupShown = false;
+        link.stop();
+        snapshot = null;
+    }
 
     private static final long WATCHDOG_INTERVAL = 20_000L;
 
