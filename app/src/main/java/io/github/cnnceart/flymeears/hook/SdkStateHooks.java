@@ -752,8 +752,6 @@ public final class SdkStateHooks {
             } else if (codec == io.github.cnnceart.flymeears.protocol.OppoWireCodec.CODEC_AAC) {
                 setField(model, 1, "o", "f4517o");
             }
-            setField(model, true, "s", "f4521s");
-            setField(model, ModuleState.hiRes(), "t", "f4522t");
             Log.i(TAG, "sdk: 状态模型 -> " + name + " / " + EncoSnapshot.modeName(mode));
         } catch (Throwable error) {
             Log.w(TAG, "sdk: 写状态模型失败", error);
