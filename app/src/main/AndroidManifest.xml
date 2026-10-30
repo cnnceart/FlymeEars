@@ -11,52 +11,8 @@
         android:theme="@android:style/Theme.DeviceDefault.DayNight">
 
         <!--
-          本模块没有用户界面：不注册任何 Activity / 桌面图标。
-          全部交互都寄生在魅族耳机 App 的原生页面与控制中心磁贴上。
-
-        <activity
-            android:name="io.github.cnnceart.flymeears.ui.MainActivity"
-            android:exported="true"
-            android:label="FlymeEars" />
-
-        <activity-alias
-            android:name="io.github.cnnceart.flymeears.ui.Launcher"
-            android:targetActivity="io.github.cnnceart.flymeears.ui.MainActivity"
-            android:exported="true"
-            android:label="FlymeEars"
-            android:icon="@android:drawable/ic_menu_compass">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-        </activity-alias>
-
-        <service
-            android:name="io.github.cnnceart.flymeears.ui.EncoTileService"
-            android:exported="true"
-            android:label="FlymeEars"
-            android:icon="@android:drawable/ic_menu_compass"
-            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
-            <intent-filter>
-                <action android:name="android.service.quicksettings.action.QS_TILE" />
-            </intent-filter>
-        </service>
-        -->
-
-        <!--
-          设备中心卡片（Android Device Controls）。实测 Flyme 设备中心对 provider
-          加载有自己的门控（魅族自家 mznfcpay 也超时），卡片无法出现，故暂时停用；
-          将来启用时注意不要与 SystemUI 会话同时持有 RFCOMM。
-
-        <service
-            android:name="io.github.cnnceart.flymeears.control.EncoControlService"
-            android:exported="true"
-            android:label="FlymeEars"
-            android:permission="android.permission.BIND_CONTROLS">
-            <intent-filter>
-                <action android:name="android.service.controls.ControlsProviderService" />
-            </intent-filter>
-        </service>
+          本模块没有用户界面：不注册 Activity / 桌面图标 / 快捷磁贴。
+          全部交互都寄生在魅族耳机 App 的原生页面与设备中心里。
         -->
 
         <provider
