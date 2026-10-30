@@ -49,7 +49,12 @@ public final class OppoWireCodec {
 
     /** 高品质音频编码帧。 */
     public static byte[] setCodec(int codec) {
-        return packet(SET_CODEC, new byte[]{(byte) codec, 0x00, 0x00});
+        return setCodec(codec, false);
+    }
+
+    /** 高品质音频编码帧；第二个字节是 Hi-Res 开关。 */
+    public static byte[] setCodec(int codec, boolean hiRes) {
+        return packet(SET_CODEC, new byte[]{(byte) codec, (byte) (hiRes ? 1 : 0), 0x00});
     }
 
     /** 连接后依次下发的读取命令。 */

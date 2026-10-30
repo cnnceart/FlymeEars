@@ -40,6 +40,7 @@ public final class EncoSession implements EncoLink.Listener {
     private volatile boolean dualConnection;
     private volatile boolean personalSound;
     private volatile int codecType = -1;
+    private volatile boolean hiRes;
     /** 最近一次真实上报的电量：耳机在耳时充电盒不回报，沿用旧值比显示 -1% 好。 */
     private int lastLeft = -1;
     private int lastRight = -1;
@@ -218,8 +219,14 @@ public final class EncoSession implements EncoLink.Listener {
 
     /** 高品质音频编码。 */
     public void requestCodec(int codec) {
-        link.requestCodec(codec);
+        requestCodec(codec, hiRes);
+    }
+
+    /** 高品质音频编码 + Hi-Res 开关。 */
+    public void requestCodec(int codec, boolean hiResOn) {
+        link.requestCodec(codec, hiResOn);
         codecType = codec;
+        hiRes = hiResOn;
         EncoSnapshot value = snapshot;
         if (value != null) {
             broadcastState(value);
@@ -340,6 +347,7 @@ public final class EncoSession implements EncoLink.Listener {
                     .putExtra(io.github.cnnceart.flymeears.EncoIntents.EXTRA_PERSONAL_SOUND,
                             personalSound)
                     .putExtra(io.github.cnnceart.flymeears.EncoIntents.EXTRA_CODEC, codecType)
+                    .putExtra(io.github.cnnceart.flymeears.EncoIntents.EXTRA_HI_RES, hiRes)
                     .putExtra(io.github.cnnceart.flymeears.EncoIntents.EXTRA_WEAR_LEFT,
                             value.leftStatus == 7)
                     .putExtra(io.github.cnnceart.flymeears.EncoIntents.EXTRA_WEAR_RIGHT,

@@ -26,6 +26,7 @@ public final class EncoIntents {
     public static final String EXTRA_FEATURE = "feature";
     public static final String EXTRA_ON = "on";
     public static final String EXTRA_CODEC = "codec";
+    public static final String EXTRA_HI_RES = "hi_res";
     public static final String EXTRA_LOW_LATENCY = "low_latency";
     public static final String EXTRA_DUAL_CONNECTION = "dual_connection";
     public static final String EXTRA_PERSONAL_SOUND = "personal_sound";

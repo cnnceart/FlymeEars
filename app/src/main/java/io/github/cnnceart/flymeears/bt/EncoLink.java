@@ -154,16 +154,22 @@ public final class EncoLink {
 
     /** 高品质音频编码。 */
     public void requestCodec(int codec) {
+        requestCodec(codec, false);
+    }
+
+    /** 高品质音频编码 + Hi-Res 开关。 */
+    public void requestCodec(int codec, boolean hiRes) {
         OutputStream stream = output;
         if (stream == null || !running.get()) {
             log("链路未就绪，无法切换编码");
             return;
         }
         try {
-            stream.write(OppoWireCodec.setCodec(codec));
+            stream.write(OppoWireCodec.setCodec(codec, hiRes));
             stream.flush();
             main.postDelayed(this::refresh, 800);
-            log(String.format(java.util.Locale.ROOT, "已下发编码 0x%02X", codec));
+            log(String.format(java.util.Locale.ROOT,
+                    "已下发编码 0x%02X，Hi-Res=%s", codec, hiRes ? "开" : "关"));
         } catch (IOException error) {
             log("编码下发失败：" + error.getClass().getSimpleName());
             closeQuietly();

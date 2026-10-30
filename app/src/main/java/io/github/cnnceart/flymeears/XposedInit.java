@@ -143,10 +143,12 @@ public final class XposedInit extends XposedModule {
                         .equals(intent.getAction())) {
                     int codec = intent.getIntExtra(
                             io.github.cnnceart.flymeears.EncoIntents.EXTRA_CODEC, -1);
+                    boolean hiRes = intent.getBooleanExtra(
+                            io.github.cnnceart.flymeears.EncoIntents.EXTRA_HI_RES, false);
                     if (codec > 0) {
-                        session.requestCodec(codec);
+                        session.requestCodec(codec, hiRes);
                         android.util.Log.i(TAG, "session: 编码 0x"
-                                + Integer.toHexString(codec));
+                                + Integer.toHexString(codec) + " hiRes=" + hiRes);
                     }
                     return;
                 }

@@ -304,6 +304,18 @@ public final class SdkStateHooks {
             }
             return chain.proceed();
         });
+
+        Method lhdcEnable = wrapper.getDeclaredMethod("setLhdcEnable", String.class, boolean.class);
+        module.hook(lhdcEnable).intercept(chain -> {
+            if (isOurs((String) chain.getArg(0))) {
+                boolean on = (Boolean) chain.getArg(1);
+                sendCodec(chain.getThisObject(),
+                        io.github.cnnceart.flymeears.protocol.OppoWireCodec.CODEC_LHDC, on);
+                Log.i(TAG, "sdk: Hi-Res -> " + on);
+                return true;
+            }
+            return chain.proceed();
+        });
     }
 
     private static void hookFeatureSwitch(XposedModule module, Class<?> wrapper,
@@ -340,6 +352,10 @@ public final class SdkStateHooks {
     }
 
     private static void sendCodec(Object wrapper, int codec) {
+        sendCodec(wrapper, codec, ModuleState.hiRes());
+    }
+
+    private static void sendCodec(Object wrapper, int codec, boolean hiRes) {
         try {
             Context context = (Context) readField(wrapper, "context");
             if (context == null) {
@@ -347,7 +363,8 @@ public final class SdkStateHooks {
             }
             context.sendBroadcast(new Intent(EncoIntents.ACTION_SET_CODEC)
                     .setPackage("com.android.systemui")
-                    .putExtra(EncoIntents.EXTRA_CODEC, codec));
+                    .putExtra(EncoIntents.EXTRA_CODEC, codec)
+                    .putExtra(EncoIntents.EXTRA_HI_RES, hiRes));
         } catch (Throwable error) {
             Log.w(TAG, "sdk: 下发编码失败", error);
         }
@@ -735,6 +752,8 @@ public final class SdkStateHooks {
             } else if (codec == io.github.cnnceart.flymeears.protocol.OppoWireCodec.CODEC_AAC) {
                 setField(model, 1, "o", "f4517o");
             }
+            setField(model, true, "s", "f4521s");
+            setField(model, ModuleState.hiRes(), "t", "f4522t");
             Log.i(TAG, "sdk: 状态模型 -> " + name + " / " + EncoSnapshot.modeName(mode));
         } catch (Throwable error) {
             Log.w(TAG, "sdk: 写状态模型失败", error);

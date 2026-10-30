@@ -41,6 +41,7 @@ public final class ModuleState {
     private static volatile boolean dualConnection;
     private static volatile boolean personalSound;
     private static volatile int codec = -1;
+    private static volatile boolean hiRes;
     private static volatile int eq = -1;
     private static volatile boolean wearLeft;
     private static volatile boolean wearRight;
@@ -92,6 +93,7 @@ public final class ModuleState {
         dualConnection = intent.getBooleanExtra(EncoIntents.EXTRA_DUAL_CONNECTION, false);
         personalSound = intent.getBooleanExtra(EncoIntents.EXTRA_PERSONAL_SOUND, false);
         codec = intent.getIntExtra(EncoIntents.EXTRA_CODEC, -1);
+        hiRes = intent.getBooleanExtra(EncoIntents.EXTRA_HI_RES, false);
         eq = intent.getIntExtra(EncoIntents.EXTRA_EQ, -1);
         wearLeft = intent.getBooleanExtra(EncoIntents.EXTRA_WEAR_LEFT, false);
         wearRight = intent.getBooleanExtra(EncoIntents.EXTRA_WEAR_RIGHT, false);
@@ -169,6 +171,10 @@ public final class ModuleState {
 
     public static int codec() {
         return codec;
+    }
+
+    public static boolean hiRes() {
+        return hiRes;
     }
 
     public static int eq() {
