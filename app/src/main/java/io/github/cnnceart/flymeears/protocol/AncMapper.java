@@ -25,13 +25,18 @@ public final class AncMapper {
     private AncMapper() {
     }
 
-    /** 魅族档位 → OPPO 0x0404 的 primary；未知返回 -1。 */
+    /**
+     * 魅族档位 → OPPO 0x0404 的 primary；未知返回 -1。
+     *
+     * <p>映射以欢律实测为准：深度=0x10、中度=0x20、轻度=0x40、智能=0x80。
+     * 魅族的「均衡」对应欢律的「中度」。
+     */
     public static int levelToPrimary(int level) {
         return switch (level) {
             case LEVEL_SMART -> 0x80;
-            case LEVEL_DEEP -> 0x40;
+            case LEVEL_DEEP -> 0x10;
             case LEVEL_BALANCE -> 0x20;
-            case LEVEL_LIGHT -> 0x10;
+            case LEVEL_LIGHT -> 0x40;
             default -> -1;
         };
     }
@@ -40,9 +45,9 @@ public final class AncMapper {
     public static int primaryToLevel(int primary) {
         return switch (primary) {
             case 0x80 -> LEVEL_SMART;
-            case 0x40 -> LEVEL_DEEP;
+            case 0x10 -> LEVEL_DEEP;
             case 0x20 -> LEVEL_BALANCE;
-            case 0x10 -> LEVEL_LIGHT;
+            case 0x40 -> LEVEL_LIGHT;
             default -> -1;
         };
     }
