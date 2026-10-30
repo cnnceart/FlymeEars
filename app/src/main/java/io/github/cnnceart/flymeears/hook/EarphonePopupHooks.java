@@ -197,6 +197,18 @@ public final class EarphonePopupHooks {
         Uri uri = ArtProvider.uri(artName);
         try {
             icon.setScaleType(ImageView.ScaleType.FIT_CENTER);
+            // 直接解码成 Bitmap，绕过宿主对 content URI 的图片缓存。
+            try (java.io.InputStream input = icon.getContext().getContentResolver()
+                    .openInputStream(uri)) {
+                android.graphics.Bitmap bitmap = android.graphics.BitmapFactory
+                        .decodeStream(input);
+                if (bitmap != null) {
+                    icon.setImageBitmap(bitmap);
+                    return;
+                }
+            } catch (Throwable ignored) {
+                // 回退到 URI 方式。
+            }
             icon.setImageURI(null);
             icon.setImageURI(uri);
             if (icon.getDrawable() == null) {

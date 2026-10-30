@@ -27,8 +27,11 @@ public final class ArtProvider extends ContentProvider {
     public static final String BUD_RIGHT = "enco_bud_right.png";
     public static final String PAIR = "enco_art.png";
 
+    /** 换图时递增，让宿主按新的 content URI 重新解码，绕过位图缓存。 */
+    private static final int ART_VERSION = 2;
+
     public static Uri uri(String name) {
-        return Uri.parse("content://" + AUTHORITY + "/" + name);
+        return Uri.parse("content://" + AUTHORITY + "/" + name + "?v=" + ART_VERSION);
     }
 
     @Override
@@ -50,14 +53,13 @@ public final class ArtProvider extends ContentProvider {
         };
         try {
             File cached = new File(appContext().getCacheDir(), name);
-            if (!cached.exists() || cached.length() == 0) {
-                try (InputStream input = appContext().getResources().openRawResource(resource);
-                     FileOutputStream output = new FileOutputStream(cached)) {
-                    byte[] buffer = new byte[16 * 1024];
-                    int read;
-                    while ((read = input.read(buffer)) > 0) {
-                        output.write(buffer, 0, read);
-                    }
+            // 资源更新后旧缓存必须失效，否则换图不生效。
+            try (InputStream input = appContext().getResources().openRawResource(resource);
+                 FileOutputStream output = new FileOutputStream(cached, false)) {
+                byte[] buffer = new byte[16 * 1024];
+                int read;
+                while ((read = input.read(buffer)) > 0) {
+                    output.write(buffer, 0, read);
                 }
             }
             return ParcelFileDescriptor.open(cached, ParcelFileDescriptor.MODE_READ_ONLY);
