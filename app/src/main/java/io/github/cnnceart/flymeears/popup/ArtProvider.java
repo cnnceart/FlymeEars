@@ -39,6 +39,8 @@ public final class ArtProvider extends ContentProvider {
         return true;
     }
 
+    private static final Object CACHE_LOCK = new Object();
+
     @Override
     public ParcelFileDescriptor openFile(Uri uri, String mode) throws java.io.FileNotFoundException {
         String name = uri.getLastPathSegment();
@@ -52,14 +54,31 @@ public final class ArtProvider extends ContentProvider {
             default -> io.github.cnnceart.flymeears.R.raw.enco_art;
         };
         try {
-            File cached = new File(appContext().getCacheDir(), name);
-            // 资源更新后旧缓存必须失效，否则换图不生效。
-            try (InputStream input = appContext().getResources().openRawResource(resource);
-                 FileOutputStream output = new FileOutputStream(cached, false)) {
-                byte[] buffer = new byte[16 * 1024];
-                int read;
-                while ((read = input.read(buffer)) > 0) {
-                    output.write(buffer, 0, read);
+            // 文件名带 ART_VERSION：换图时用新文件，旧文件只写一次；
+            // 同一文件由 CACHE_LOCK 串行化，避免并发 truncate 出半张图。
+            File cached = new File(appContext().getCacheDir(), "v" + ART_VERSION + "_" + name);
+            synchronized (CACHE_LOCK) {
+                if (!cached.exists() || cached.length() == 0L) {
+                    File temp = new File(cached.getParentFile(), cached.getName() + ".tmp");
+                    try (InputStream input = appContext().getResources().openRawResource(resource);
+                         FileOutputStream output = new FileOutputStream(temp, false)) {
+                        byte[] buffer = new byte[16 * 1024];
+                        int read;
+                        while ((read = input.read(buffer)) > 0) {
+                            output.write(buffer, 0, read);
+                        }
+                    }
+                    if (!temp.renameTo(cached)) {
+                        temp.delete();
+                        try (InputStream input = appContext().getResources().openRawResource(resource);
+                             FileOutputStream output = new FileOutputStream(cached, false)) {
+                            byte[] buffer = new byte[16 * 1024];
+                            int read;
+                            while ((read = input.read(buffer)) > 0) {
+                                output.write(buffer, 0, read);
+                            }
+                        }
+                    }
                 }
             }
             return ParcelFileDescriptor.open(cached, ParcelFileDescriptor.MODE_READ_ONLY);

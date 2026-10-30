@@ -1,5 +1,7 @@
 package io.github.cnnceart.flymeears;
 
+import io.github.cnnceart.flymeears.protocol.OppoWireCodec;
+
 /** 模块内部广播契约：宿主详情页 ↔ SystemUI 会话。 */
 public final class EncoIntents {
 
@@ -59,12 +61,43 @@ public final class EncoIntents {
     public static final String EXTRA_WEAR_RIGHT = "wear_right";
     public static final String EXTRA_IN_BOX_LEFT = "inbox_left";
     public static final String EXTRA_IN_BOX_RIGHT = "inbox_right";
+    /** 本次广播的佩戴/在盒值是否有效；缺省表示沿用上一次。 */
+    public static final String EXTRA_WEAR_VALID = "wear_valid";
 
     /** 0x0112 多设备表：每项 "mac\u0001name"，当前设备排第一。 */
     public static final String EXTRA_DUAL_DEVICES = "dual_devices";
 
     /** 只要求回推当前状态，不要切换模式（详情页打开时用）。 */
     public static final String EXTRA_QUERY_ONLY = "query_only";
+
+    /** 以下白名单只接受协议表里存在的值，避免被伪造广播写入任意帧。 */
+    public static boolean validMode(int mode) {
+        return mode >= 1 && mode <= 3;
+    }
+
+    public static boolean validAncLevel(int level) {
+        return level >= 17 && level <= 20;
+    }
+
+    public static boolean validFeature(int feature) {
+        return feature == OppoWireCodec.FEATURE_GAME_MODE
+                || feature == OppoWireCodec.FEATURE_PERSONAL_SOUND
+                || feature == OppoWireCodec.FEATURE_DUAL_CONNECTION;
+    }
+
+    public static boolean validCodec(int codec) {
+        return codec == OppoWireCodec.CODEC_AAC
+                || codec == OppoWireCodec.CODEC_LDAC
+                || codec == OppoWireCodec.CODEC_LHDC;
+    }
+
+    public static boolean validEq(int eq) {
+        return eq >= 0 && eq <= 3;
+    }
+
+    public static boolean validBattery(int percent) {
+        return percent >= 0 && percent <= 100;
+    }
 
     private EncoIntents() {
     }

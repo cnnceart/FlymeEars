@@ -51,11 +51,23 @@ public final class DeviceListHooks {
     private static Object injected;
     private static volatile String resolvedAddress;
     private static volatile String resolvedName;
+    /** 上次尝试解析身份的时间；失败后做负缓存，避免每次 isOurs 都打 binder。 */
+    private static volatile long identityAttemptAt;
+    private static final long IDENTITY_RETRY_MS = 15_000L;
 
     private DeviceListHooks() {
     }
 
     public static void install(XposedModule module, ClassLoader classLoader) {
+        if (loader != null && loader != classLoader) {
+            // 插件重载会换 ClassLoader，旧的 AudioDevice/host 实例不能再交给新 loader。
+            Log.i(TAG, "device list: ClassLoader 变化，清理缓存");
+            injected = null;
+            resolvedAddress = null;
+            resolvedName = null;
+            identityAttemptAt = 0L;
+            Host.resetForLoaderChange();
+        }
         loader = classLoader;
         try {
             preferences = module.getRemotePreferences(PREFS);
@@ -289,12 +301,14 @@ public final class DeviceListHooks {
             return;
         }
         String id = deviceId(ours);
-        for (Object existing : devices) {
-            if (id.equals(deviceId(existing))) {
-                return;
+        synchronized (devices) {
+            for (Object existing : devices) {
+                if (id.equals(deviceId(existing))) {
+                    return;
+                }
             }
+            ((Set<Object>) devices).add(ours);
         }
-        ((Set<Object>) devices).add(ours);
         Log.i(TAG, "device list: 已注入 " + id);
     }
 
@@ -372,8 +386,19 @@ public final class DeviceListHooks {
         if (resolvedAddress != null && !resolvedAddress.isEmpty()) {
             return;
         }
-        String address = preferences == null ? null : preferences.getString("address", null);
-        String name = preferences == null ? null : preferences.getString("name", null);
+        long now = android.os.SystemClock.elapsedRealtime();
+        if (identityAttemptAt != 0L && now - identityAttemptAt < IDENTITY_RETRY_MS) {
+            return;
+        }
+        identityAttemptAt = now;
+        String address = null;
+        String name = null;
+        try {
+            address = preferences == null ? null : preferences.getString("address", null);
+            name = preferences == null ? null : preferences.getString("name", null);
+        } catch (Throwable error) {
+            Log.w(TAG, "device list: 读取远程偏好失败", error);
+        }
         if (address == null || address.isEmpty()) {
             try {
                 android.bluetooth.BluetoothAdapter adapter =

@@ -76,6 +76,9 @@ public final class ArtworkHooks {
                     "setImageResource", int.class);
             module.hook(setImageResource).intercept(chain -> {
                 ImageView view = (ImageView) chain.getThisObject();
+                if (!isPluginView(view)) {
+                    return chain.proceed();
+                }
                 int id = ((Number) chain.getArg(0)).intValue();
                 if (isPluginBox(view) || isCardBoxResource(view, id)) {
                     if (!cardSeen) {
@@ -106,7 +109,11 @@ public final class ArtworkHooks {
                 Object result = chain.proceed();
                 if (chain.getThisObject() instanceof android.widget.TextView view
                         && !IN_BATTERY_TEXT.get()) {
-                    decorateBatteryText(view);
+                    try {
+                        decorateBatteryText(view);
+                    } catch (Throwable error) {
+                        Log.w(TAG, "art: 修正电量文字失败", error);
+                    }
                 }
                 return result;
             });
@@ -173,18 +180,13 @@ public final class ArtworkHooks {
                 };
     }
 
-    private static boolean isPluginBattery(android.widget.TextView view) {
-        android.content.Context context = view.getContext();
-        if (context == null || !"com.meizu.earphone".equals(context.getPackageName())) {
+    /** SystemUI 里绝大多数 ImageView 不属于插件，先按包名挡掉，避免每次 setImageResource 都查资源表。 */
+    private static boolean isPluginView(ImageView view) {
+        if (view == null) {
             return false;
         }
-        int id = view.getId();
-        for (String name : new String[]{"left_charge_tv", "right_charge_tv", "box_charge_tv"}) {
-            if (id == context.getResources().getIdentifier(name, "id", "com.meizu.earphone")) {
-                return true;
-            }
-        }
-        return false;
+        android.content.Context context = view.getContext();
+        return context != null && "com.meizu.earphone".equals(context.getPackageName());
     }
 
     /**

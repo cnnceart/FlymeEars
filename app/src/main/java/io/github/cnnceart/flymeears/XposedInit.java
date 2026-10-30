@@ -32,16 +32,20 @@ public final class XposedInit extends XposedModule {
                 + android.os.Process.myPid());
 
         if ("com.android.systemui".equals(packageName)) {
-            probe(loader, "com.flyme.systemui.volume.QSVolumeControllerImpl");
             installStep("session", () -> startSystemUiSession(loader));
             installStep("artwork", () -> io.github.cnnceart.flymeears.hook.ArtworkHooks
                     .installSystemUi(this, loader));
         } else if ("com.meizu.earphone".equals(packageName)) {
-            io.github.cnnceart.flymeears.hook.EarphonePopupHooks.install(this, loader);
-            io.github.cnnceart.flymeears.hook.DeviceListHooks.install(this, loader);
-            io.github.cnnceart.flymeears.hook.SdkStateHooks.install(this, loader);
-            io.github.cnnceart.flymeears.hook.ScanHooks.install(this, loader);
-            io.github.cnnceart.flymeears.hook.ArtworkHooks.installEarphone(this, loader);
+            installStep("popup", () -> io.github.cnnceart.flymeears.hook.EarphonePopupHooks
+                    .install(this, loader));
+            installStep("device-list", () -> io.github.cnnceart.flymeears.hook.DeviceListHooks
+                    .install(this, loader));
+            installStep("sdk-state", () -> io.github.cnnceart.flymeears.hook.SdkStateHooks
+                    .install(this, loader));
+            installStep("scan", () -> io.github.cnnceart.flymeears.hook.ScanHooks
+                    .install(this, loader));
+            installStep("artwork", () -> io.github.cnnceart.flymeears.hook.ArtworkHooks
+                    .installEarphone(this, loader));
         } else if ("com.meizu.connectivitysettings".equals(packageName)) {
             probe(loader, "com.meizu.settings.bluetooth.BluetoothDeviceDetailFragment");
         }
@@ -70,7 +74,7 @@ public final class XposedInit extends XposedModule {
                         .equals(intent.getAction())) {
                     int eq = intent.getIntExtra(
                             io.github.cnnceart.flymeears.EncoIntents.EXTRA_EQ, -1);
-                    if (eq >= 0) {
+                    if (EncoIntents.validEq(eq)) {
                         session.setEq(eq);
                         android.util.Log.i(TAG, "session: 设置 EQ " + eq);
                     }
@@ -86,7 +90,7 @@ public final class XposedInit extends XposedModule {
                         .equals(intent.getAction())) {
                     int[] curve = intent.getIntArrayExtra(
                             io.github.cnnceart.flymeears.EncoIntents.EXTRA_CURVE);
-                    if (curve != null && curve.length > 0) {
+                    if (curve != null && curve.length > 0 && curve.length <= 32) {
                         session.setCurve(curve);
                         android.util.Log.i(TAG, "session: 自定义 EQ " + java.util.Arrays.toString(curve));
                     }
@@ -96,7 +100,7 @@ public final class XposedInit extends XposedModule {
                         .equals(intent.getAction())) {
                     int mode = intent.getIntExtra(
                             io.github.cnnceart.flymeears.EncoIntents.EXTRA_MODE, 0);
-                    if (mode != 0) {
+                    if (EncoIntents.validMode(mode)) {
                         session.requestMode(mode);
                         android.util.Log.i(TAG, "session: 详情页切换模式 " + mode);
                     }
@@ -106,7 +110,7 @@ public final class XposedInit extends XposedModule {
                         .equals(intent.getAction())) {
                     int level = intent.getIntExtra(
                             io.github.cnnceart.flymeears.EncoIntents.EXTRA_ANC_LEVEL, -1);
-                    if (level > 0) {
+                    if (EncoIntents.validAncLevel(level)) {
                         session.requestAncLevel(level);
                         android.util.Log.i(TAG, "session: 降噪档位 " + level);
                     }
@@ -118,7 +122,7 @@ public final class XposedInit extends XposedModule {
                             io.github.cnnceart.flymeears.EncoIntents.EXTRA_FEATURE, -1);
                     boolean on = intent.getBooleanExtra(
                             io.github.cnnceart.flymeears.EncoIntents.EXTRA_ON, false);
-                    if (feature >= 0) {
+                    if (EncoIntents.validFeature(feature)) {
                         session.requestFeature(feature, on);
                         android.util.Log.i(TAG, "session: 功能 0x"
                                 + Integer.toHexString(feature) + " -> " + on);
@@ -131,7 +135,7 @@ public final class XposedInit extends XposedModule {
                             io.github.cnnceart.flymeears.EncoIntents.EXTRA_CODEC, -1);
                     boolean hiRes = intent.getBooleanExtra(
                             io.github.cnnceart.flymeears.EncoIntents.EXTRA_HI_RES, false);
-                    if (codec > 0) {
+                    if (EncoIntents.validCodec(codec)) {
                         session.requestCodec(codec, hiRes);
                         android.util.Log.i(TAG, "session: 编码 0x"
                                 + Integer.toHexString(codec) + " hiRes=" + hiRes);
@@ -172,6 +176,12 @@ public final class XposedInit extends XposedModule {
                 Object result = chain.proceed();
                 try {
                     android.app.Application application = (android.app.Application) chain.getThisObject();
+                    String process = application.getProcessName();
+                    if (process != null && process.contains(":")) {
+                        // 每个 SystemUI 子进程都起会话会重复建 RFCOMM、重复注册控制接收器。
+                        android.util.Log.i(TAG, "session: 子进程 " + process + " 跳过会话");
+                        return result;
+                    }
                     io.github.cnnceart.flymeears.systemui.EncoSession.start(application);
                     registerControlReceiver(application);
                 } catch (Throwable error) {

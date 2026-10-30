@@ -47,6 +47,8 @@ public final class ModuleState {
     private static volatile boolean wearRight;
     private static volatile boolean inBoxLeft;
     private static volatile boolean inBoxRight;
+    /** 佩戴/在盒值是否已经收到过有效回读；false 时不要把它当成“未佩戴”推给宿主。 */
+    private static volatile boolean wearValid;
     private static volatile boolean leftCharging;
     private static volatile boolean rightCharging;
     private static volatile boolean boxCharging;
@@ -86,30 +88,100 @@ public final class ModuleState {
         }
     }
 
+    /**
+     * 只覆盖 intent 里实际带了的字段。
+     *
+     * <p>断开的广播只带 {@code connected=false} 与少量开关；缺省的字段必须沿用上一次的
+     * 有效值，否则会把 ANC 模式覆盖成 0（未知）、把佩戴覆盖成 false。
+     */
     private static void update(Intent intent) {
         if (intent == null) {
             return;
         }
-        mode = intent.getIntExtra(EncoIntents.EXTRA_MODE, 0);
-        ancLevel = intent.getIntExtra(EncoIntents.EXTRA_ANC_LEVEL, -1);
-        lowLatency = intent.getBooleanExtra(EncoIntents.EXTRA_LOW_LATENCY, false);
-        dualConnection = intent.getBooleanExtra(EncoIntents.EXTRA_DUAL_CONNECTION, false);
-        personalSound = intent.getBooleanExtra(EncoIntents.EXTRA_PERSONAL_SOUND, false);
-        codec = intent.getIntExtra(EncoIntents.EXTRA_CODEC, -1);
-        hiRes = intent.getBooleanExtra(EncoIntents.EXTRA_HI_RES, false);
-        eq = intent.getIntExtra(EncoIntents.EXTRA_EQ, -1);
-        wearLeft = intent.getBooleanExtra(EncoIntents.EXTRA_WEAR_LEFT, false);
-        wearRight = intent.getBooleanExtra(EncoIntents.EXTRA_WEAR_RIGHT, false);
-        inBoxLeft = intent.getBooleanExtra(EncoIntents.EXTRA_IN_BOX_LEFT, false);
-        inBoxRight = intent.getBooleanExtra(EncoIntents.EXTRA_IN_BOX_RIGHT, false);
-        leftCharging = intent.getBooleanExtra(EncoIntents.EXTRA_LEFT_CHARGING, false);
-        rightCharging = intent.getBooleanExtra(EncoIntents.EXTRA_RIGHT_CHARGING, false);
-        boxCharging = intent.getBooleanExtra(EncoIntents.EXTRA_BOX_CHARGING, false);
-        left = intent.getIntExtra(EncoIntents.EXTRA_LEFT, -1);
-        right = intent.getIntExtra(EncoIntents.EXTRA_RIGHT, -1);
-        box = intent.getIntExtra(EncoIntents.EXTRA_CASE, -1);
-        connected = intent.getBooleanExtra(EncoIntents.EXTRA_CONNECTED, false);
-        dualDevices = parseDualDevices(intent.getStringArrayExtra(EncoIntents.EXTRA_DUAL_DEVICES));
+        if (intent.hasExtra(EncoIntents.EXTRA_MODE)) {
+            int value = intent.getIntExtra(EncoIntents.EXTRA_MODE, mode);
+            if (EncoIntents.validMode(value)) {
+                mode = value;
+            }
+        }
+        if (intent.hasExtra(EncoIntents.EXTRA_ANC_LEVEL)) {
+            int value = intent.getIntExtra(EncoIntents.EXTRA_ANC_LEVEL, ancLevel);
+            if (EncoIntents.validAncLevel(value)) {
+                ancLevel = value;
+            }
+        }
+        if (intent.hasExtra(EncoIntents.EXTRA_EQ)) {
+            int value = intent.getIntExtra(EncoIntents.EXTRA_EQ, eq);
+            if (EncoIntents.validEq(value)) {
+                eq = value;
+            }
+        }
+        if (intent.hasExtra(EncoIntents.EXTRA_CODEC)) {
+            int value = intent.getIntExtra(EncoIntents.EXTRA_CODEC, codec);
+            if (EncoIntents.validCodec(value)) {
+                codec = value;
+            }
+        }
+        if (intent.hasExtra(EncoIntents.EXTRA_LOW_LATENCY)) {
+            lowLatency = intent.getBooleanExtra(EncoIntents.EXTRA_LOW_LATENCY, lowLatency);
+        }
+        if (intent.hasExtra(EncoIntents.EXTRA_DUAL_CONNECTION)) {
+            dualConnection = intent.getBooleanExtra(EncoIntents.EXTRA_DUAL_CONNECTION, dualConnection);
+        }
+        if (intent.hasExtra(EncoIntents.EXTRA_PERSONAL_SOUND)) {
+            personalSound = intent.getBooleanExtra(EncoIntents.EXTRA_PERSONAL_SOUND, personalSound);
+        }
+        if (intent.hasExtra(EncoIntents.EXTRA_HI_RES)) {
+            hiRes = intent.getBooleanExtra(EncoIntents.EXTRA_HI_RES, hiRes);
+        }
+        if (intent.hasExtra(EncoIntents.EXTRA_WEAR_VALID)) {
+            wearValid = intent.getBooleanExtra(EncoIntents.EXTRA_WEAR_VALID, wearValid);
+        }
+        if (intent.hasExtra(EncoIntents.EXTRA_WEAR_LEFT)) {
+            wearLeft = intent.getBooleanExtra(EncoIntents.EXTRA_WEAR_LEFT, wearLeft);
+        }
+        if (intent.hasExtra(EncoIntents.EXTRA_WEAR_RIGHT)) {
+            wearRight = intent.getBooleanExtra(EncoIntents.EXTRA_WEAR_RIGHT, wearRight);
+        }
+        if (intent.hasExtra(EncoIntents.EXTRA_IN_BOX_LEFT)) {
+            inBoxLeft = intent.getBooleanExtra(EncoIntents.EXTRA_IN_BOX_LEFT, inBoxLeft);
+        }
+        if (intent.hasExtra(EncoIntents.EXTRA_IN_BOX_RIGHT)) {
+            inBoxRight = intent.getBooleanExtra(EncoIntents.EXTRA_IN_BOX_RIGHT, inBoxRight);
+        }
+        if (intent.hasExtra(EncoIntents.EXTRA_LEFT_CHARGING)) {
+            leftCharging = intent.getBooleanExtra(EncoIntents.EXTRA_LEFT_CHARGING, leftCharging);
+        }
+        if (intent.hasExtra(EncoIntents.EXTRA_RIGHT_CHARGING)) {
+            rightCharging = intent.getBooleanExtra(EncoIntents.EXTRA_RIGHT_CHARGING, rightCharging);
+        }
+        if (intent.hasExtra(EncoIntents.EXTRA_BOX_CHARGING)) {
+            boxCharging = intent.getBooleanExtra(EncoIntents.EXTRA_BOX_CHARGING, boxCharging);
+        }
+        if (intent.hasExtra(EncoIntents.EXTRA_LEFT)) {
+            int value = intent.getIntExtra(EncoIntents.EXTRA_LEFT, left);
+            if (EncoIntents.validBattery(value)) {
+                left = value;
+            }
+        }
+        if (intent.hasExtra(EncoIntents.EXTRA_RIGHT)) {
+            int value = intent.getIntExtra(EncoIntents.EXTRA_RIGHT, right);
+            if (EncoIntents.validBattery(value)) {
+                right = value;
+            }
+        }
+        if (intent.hasExtra(EncoIntents.EXTRA_CASE)) {
+            int value = intent.getIntExtra(EncoIntents.EXTRA_CASE, box);
+            if (EncoIntents.validBattery(value)) {
+                box = value;
+            }
+        }
+        if (intent.hasExtra(EncoIntents.EXTRA_CONNECTED)) {
+            connected = intent.getBooleanExtra(EncoIntents.EXTRA_CONNECTED, connected);
+        }
+        if (intent.hasExtra(EncoIntents.EXTRA_DUAL_DEVICES)) {
+            dualDevices = parseDualDevices(intent.getStringArrayExtra(EncoIntents.EXTRA_DUAL_DEVICES));
+        }
         String value = intent.getStringExtra(EncoIntents.EXTRA_NAME);
         if (value != null && !value.isEmpty()) {
             name = value;
@@ -217,6 +289,11 @@ public final class ModuleState {
 
     public static boolean inBoxRight() {
         return inBoxRight;
+    }
+
+    /** 是否收到过 0x0109 的佩戴/在盒回读。 */
+    public static boolean wearValid() {
+        return wearValid;
     }
 
     public static boolean leftCharging() {

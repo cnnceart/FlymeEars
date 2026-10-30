@@ -35,6 +35,8 @@ public final class EncoSession implements EncoLink.Listener {
     private String currentAddress;
     private String currentName;
     private boolean popupShown;
+    /** 最近一次广播出去的连接态；null 表示本进程还没发过。 */
+    private volatile Boolean publishedConnected;
     /** 用户主动断开后先别自动回连，等音频路由消失再恢复。 */
     private volatile boolean userDisconnected;
     private volatile EncoSnapshot snapshot;
@@ -341,11 +343,18 @@ public final class EncoSession implements EncoLink.Listener {
                 userDisconnected = false;
             }
             Log.i(TAG, "session: 设备已断开，释放链路");
-            broadcastDisconnected();
+            if (publishedConnected == null || publishedConnected) {
+                broadcastDisconnected();
+            }
             currentAddress = null;
             popupShown = false;
             link.stop();
             snapshot = null;
+        } else if (publishedConnected == null || publishedConnected) {
+            // SystemUI 重启后如果耳机本来就没连，也要补发一次“未连接”，
+            // 否则耳机进程会保留上一次运行留下的过期 connected 状态。
+            Log.i(TAG, "session: 启动时无设备，补发未连接");
+            broadcastDisconnected();
         }
     }
 
@@ -417,6 +426,7 @@ public final class EncoSession implements EncoLink.Listener {
     }
 
     private void broadcastState(EncoSnapshot value) {
+        publishedConnected = value.connected;
         if (value.dualDevices.length > 0) {
             dualDevices = value.dualDevices;
         }
@@ -457,6 +467,8 @@ public final class EncoSession implements EncoLink.Listener {
                             value.leftStatus == 4)
                     .putExtra(io.github.cnnceart.flymeears.EncoIntents.EXTRA_IN_BOX_RIGHT,
                             value.rightStatus == 4)
+                    .putExtra(io.github.cnnceart.flymeears.EncoIntents.EXTRA_WEAR_VALID,
+                            value.leftStatus >= 0 || value.rightStatus >= 0)
                     .putExtra(io.github.cnnceart.flymeears.EncoIntents.EXTRA_LEFT_CHARGING,
                             leftCharging)
                     .putExtra(io.github.cnnceart.flymeears.EncoIntents.EXTRA_RIGHT_CHARGING,
@@ -480,6 +492,7 @@ public final class EncoSession implements EncoLink.Listener {
 
     /** 断开时也要广播一次，宿主的详情页/弹窗才能收起。 */
     private void broadcastDisconnected() {
+        publishedConnected = false;
         try {
             android.content.Intent state = new android.content.Intent(
                     io.github.cnnceart.flymeears.EncoIntents.ACTION_STATE)

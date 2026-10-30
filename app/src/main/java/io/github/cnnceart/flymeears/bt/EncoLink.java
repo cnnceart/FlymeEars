@@ -12,7 +12,10 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import io.github.cnnceart.flymeears.protocol.AncMapper;
 import io.github.cnnceart.flymeears.protocol.OppoWireCodec;
@@ -48,6 +51,16 @@ public final class EncoLink {
     private volatile OppoWireConfig config = OppoWireConfig.STANDARD;
     private Thread worker;
     private Thread ticker;
+
+    /** 下行帧统一从单线程写出：主线程只入队，帧不会和其它线程交错。 */
+    private static final int MAX_PENDING_WRITES = 64;
+    private final ExecutorService writer = Executors.newSingleThreadExecutor(task -> {
+        Thread thread = new Thread(task, "FlymeEars-Write");
+        thread.setDaemon(true);
+        return thread;
+    });
+    private final AtomicInteger generation = new AtomicInteger();
+    private final AtomicInteger pendingWrites = new AtomicInteger();
 
     public EncoSnapshot snapshot() {
         return snapshot;
@@ -98,16 +111,10 @@ public final class EncoLink {
             log("未知模式：" + flymeMode);
             return;
         }
-        try {
-            stream.write(OppoWireCodec.setAnc(primary));
-            stream.flush();
-            // 发送成功不等于生效：稍等片刻再读回，避免拿到切换前的旧状态。
-            main.postDelayed(this::refresh, 600);
-            log("已下发模式 " + EncoSnapshot.modeName(flymeMode));
-        } catch (IOException error) {
-            log("模式下发失败：" + error.getClass().getSimpleName());
-            closeQuietly();
-        }
+        enqueue(OppoWireCodec.setAnc(primary));
+        // 发送成功不等于生效：稍等片刻再读回，避免拿到切换前的旧状态。
+        main.postDelayed(this::refresh, 600);
+        log("已下发模式 " + EncoSnapshot.modeName(flymeMode));
     }
 
     /** 设置降噪档位（魅族 17 智能 / 18 深度 / 19 均衡 / 20 轻度）。 */
@@ -122,16 +129,10 @@ public final class EncoLink {
             log("未知降噪档位：" + level);
             return;
         }
-        try {
-            stream.write(OppoWireCodec.setAnc(primary));
-            stream.flush();
-            main.postDelayed(this::refresh, 600);
-            log("已下发降噪档位 " + level + "（0x"
-                    + String.format(java.util.Locale.ROOT, "%02X", primary) + "）");
-        } catch (IOException error) {
-            log("降噪档位下发失败：" + error.getClass().getSimpleName());
-            closeQuietly();
-        }
+        enqueue(OppoWireCodec.setAnc(primary));
+        main.postDelayed(this::refresh, 600);
+        log("已下发降噪档位 " + level + "（0x"
+                + String.format(java.util.Locale.ROOT, "%02X", primary) + "）");
     }
 
     /** 功能开关（游戏模式 06 / 黄金听感 0B / 设备双连 11）。 */
@@ -141,15 +142,9 @@ public final class EncoLink {
             log("链路未就绪，无法切换功能");
             return;
         }
-        try {
-            stream.write(OppoWireCodec.featureSwitch(feature, on));
-            stream.flush();
-            log(String.format(java.util.Locale.ROOT,
-                    "已下发功能 0x%02X = %s", feature, on ? "开" : "关"));
-        } catch (IOException error) {
-            log("功能下发失败：" + error.getClass().getSimpleName());
-            closeQuietly();
-        }
+        enqueue(OppoWireCodec.featureSwitch(feature, on));
+        log(String.format(java.util.Locale.ROOT,
+                "已下发功能 0x%02X = %s", feature, on ? "开" : "关"));
     }
 
     /** 高品质音频编码。 */
@@ -164,16 +159,10 @@ public final class EncoLink {
             log("链路未就绪，无法切换编码");
             return;
         }
-        try {
-            stream.write(OppoWireCodec.setCodec(codec, hiRes));
-            stream.flush();
-            main.postDelayed(this::refresh, 800);
-            log(String.format(java.util.Locale.ROOT,
-                    "已下发编码 0x%02X，Hi-Res=%s", codec, hiRes ? "开" : "关"));
-        } catch (IOException error) {
-            log("编码下发失败：" + error.getClass().getSimpleName());
-            closeQuietly();
-        }
+        enqueue(OppoWireCodec.setCodec(codec, hiRes));
+        main.postDelayed(this::refresh, 800);
+        log(String.format(java.util.Locale.ROOT,
+                "已下发编码 0x%02X，Hi-Res=%s", codec, hiRes ? "开" : "关"));
     }
 
     /** 查找耳机：0x0400 01 响铃 / 00 停止，实测均返回 0x8400 00。 */
@@ -183,14 +172,8 @@ public final class EncoLink {
             log("链路未就绪，无法查找耳机");
             return;
         }
-        try {
-            stream.write(OppoWireCodec.packet(0x0400, new byte[]{(byte) (on ? 1 : 0)}));
-            stream.flush();
-            log(on ? "已请求耳机响铃" : "已请求停止响铃");
-        } catch (IOException error) {
-            log("查找耳机失败：" + error.getClass().getSimpleName());
-            closeQuietly();
-        }
+        enqueue(OppoWireCodec.packet(0x0400, new byte[]{(byte) (on ? 1 : 0)}));
+        log(on ? "已请求耳机响铃" : "已请求停止响铃");
     }
 
     /** 设置 OPPO EQ 模式（0..3），成功后耳机会主动回 0x0504。 */
@@ -200,15 +183,9 @@ public final class EncoLink {
             log("链路未就绪，无法设置 EQ");
             return;
         }
-        try {
-            stream.write(OppoWireCodec.packet(0x0406, new byte[]{(byte) mode}));
-            stream.flush();
-            main.postDelayed(this::refreshEq, 600);
-            log("已下发 EQ 模式 " + mode);
-        } catch (IOException error) {
-            log("EQ 下发失败：" + error.getClass().getSimpleName());
-            closeQuietly();
-        }
+        enqueue(OppoWireCodec.packet(0x0406, new byte[]{(byte) mode}));
+        main.postDelayed(this::refreshEq, 600);
+        log("已下发 EQ 模式 " + mode);
     }
 
     /**
@@ -235,24 +212,17 @@ public final class EncoLink {
         int[] bands = io.github.cnnceart.flymeears.protocol.EqMapper.toOppoBands(nativeDb);
         String name = new java.text.SimpleDateFormat("yyyy/MM/dd HH:mm", java.util.Locale.ROOT)
                 .format(new java.util.Date());
-        try {
-            stream.write(OppoWireCodec.selectHearingProfile(OppoWireCodec.HEARING_PROFILE_ID));
-            stream.write(OppoWireCodec.hearingCurve(bands, bands,
-                    OppoWireCodec.HEARING_PROFILE_ID, name));
-            // 阈值只是参数：真正生效的滤波系数由耳机计算并回传，必须再回填 0x0415。
-            pendingProfileId = OppoWireCodec.HEARING_PROFILE_ID;
-            pendingAt = android.os.SystemClock.elapsedRealtime();
-            stream.write(OppoWireCodec.hearingFilterRequest(bands, bands,
-                    OppoWireCodec.HEARING_PROFILE_ID));
-            stream.write(OppoWireCodec.featureSwitch(OppoWireCodec.FEATURE_PERSONAL_SOUND, true));
-            stream.flush();
-            log("已下发自定义 EQ：" + java.util.Arrays.toString(nativeDb)
-                    + " -> 6 段 " + java.util.Arrays.toString(bands) + "（" + name + "）"
-                    + "，等待滤波系数");
-        } catch (IOException error) {
-            log("自定义 EQ 下发失败：" + error.getClass().getSimpleName());
-            closeQuietly();
-        }
+        // 阈值只是参数：真正生效的滤波系数由耳机计算并回传，必须再回填 0x0415。
+        pendingProfileId = OppoWireCodec.HEARING_PROFILE_ID;
+        pendingAt = android.os.SystemClock.elapsedRealtime();
+        // 四帧必须连续写出，合并成一个写任务。
+        enqueue(OppoWireCodec.selectHearingProfile(OppoWireCodec.HEARING_PROFILE_ID),
+                OppoWireCodec.hearingCurve(bands, bands, OppoWireCodec.HEARING_PROFILE_ID, name),
+                OppoWireCodec.hearingFilterRequest(bands, bands, OppoWireCodec.HEARING_PROFILE_ID),
+                OppoWireCodec.featureSwitch(OppoWireCodec.FEATURE_PERSONAL_SOUND, true));
+        log("已下发自定义 EQ：" + java.util.Arrays.toString(nativeDb)
+                + " -> 6 段 " + java.util.Arrays.toString(bands) + "（" + name + "）"
+                + "，等待滤波系数");
     }
 
     private void refreshEq() {
@@ -260,13 +230,7 @@ public final class EncoLink {
         if (stream == null || !running.get()) {
             return;
         }
-        try {
-            stream.write(OppoWireCodec.packet(0x010F));
-            stream.flush();
-        } catch (IOException error) {
-            log("EQ 刷新失败：" + error.getClass().getSimpleName());
-            closeQuietly();
-        }
+        enqueue(OppoWireCodec.packet(0x010F));
     }
 
     public void refresh() {
@@ -274,19 +238,13 @@ public final class EncoLink {
         if (stream == null || !running.get()) {
             return;
         }
-        try {
-            stream.write(OppoWireCodec.QUERY_BATTERY_PACKET);
-            stream.write(OppoWireCodec.QUERY_ANC_PACKET);
-            stream.write(OppoWireCodec.packet(0x010F));
-            stream.write(OppoWireCodec.packet(0x0109));
-            stream.write(OppoWireCodec.packet(0x0114));
-            stream.write(OppoWireCodec.packet(0x0123));
-            stream.write(OppoWireCodec.packet(0x0112));
-            stream.flush();
-        } catch (IOException error) {
-            log("刷新失败：" + error.getClass().getSimpleName());
-            closeQuietly();
-        }
+        enqueue(OppoWireCodec.QUERY_BATTERY_PACKET,
+                OppoWireCodec.QUERY_ANC_PACKET,
+                OppoWireCodec.packet(0x010F),
+                OppoWireCodec.packet(0x0109),
+                OppoWireCodec.packet(0x0114),
+                OppoWireCodec.packet(0x0123),
+                OppoWireCodec.packet(0x0112));
     }
 
     private void run(String address, String name) {
@@ -416,21 +374,64 @@ public final class EncoLink {
                 + (error.getMessage() == null ? "" : " / " + error.getMessage());
     }
 
-    private void writeInitialQueries() throws IOException {
-        OutputStream stream = output;
-        if (stream == null) {
+    private void writeInitialQueries() {
+        // 先问特性，再读电量与模式；特性响应用来注册主动上报。
+        enqueue(OppoWireCodec.QUERY_NOTIFICATION_SUPPORT_PACKET,
+                OppoWireCodec.QUERY_BATTERY_PACKET,
+                OppoWireCodec.QUERY_ANC_PACKET,
+                OppoWireCodec.packet(0x010F),
+                OppoWireCodec.packet(0x0109),
+                OppoWireCodec.packet(0x0114),
+                OppoWireCodec.packet(0x0123),
+                OppoWireCodec.packet(0x0112));
+    }
+
+    /**
+     * 把一次请求的所有帧合并后交给单线程 writer。
+     *
+     * <p>同一请求的多帧必须连续写出，不能和 ticker/读线程的写交错；主线程调用只入队。
+     */
+    private void enqueue(byte[]... frames) {
+        if (frames == null || frames.length == 0 || !running.get()) {
             return;
         }
-        // 先问特性，再读电量与模式；特性响应用来注册主动上报。
-        stream.write(OppoWireCodec.QUERY_NOTIFICATION_SUPPORT_PACKET);
-        stream.write(OppoWireCodec.QUERY_BATTERY_PACKET);
-        stream.write(OppoWireCodec.QUERY_ANC_PACKET);
-        stream.write(OppoWireCodec.packet(0x010F));
-        stream.write(OppoWireCodec.packet(0x0109));
-        stream.write(OppoWireCodec.packet(0x0114));
-        stream.write(OppoWireCodec.packet(0x0123));
-        stream.write(OppoWireCodec.packet(0x0112));
-        stream.flush();
+        int total = 0;
+        for (byte[] frame : frames) {
+            if (frame == null) {
+                return;
+            }
+            total += frame.length;
+        }
+        byte[] data = new byte[total];
+        int offset = 0;
+        for (byte[] frame : frames) {
+            System.arraycopy(frame, 0, data, offset, frame.length);
+            offset += frame.length;
+        }
+        int ticket = generation.get();
+        if (pendingWrites.incrementAndGet() > MAX_PENDING_WRITES) {
+            pendingWrites.decrementAndGet();
+            log("写队列已满，丢弃一帧");
+            return;
+        }
+        writer.execute(() -> {
+            try {
+                if (ticket != generation.get() || !running.get()) {
+                    return;
+                }
+                OutputStream stream = output;
+                if (stream == null) {
+                    return;
+                }
+                stream.write(data);
+                stream.flush();
+            } catch (IOException error) {
+                log("写入失败：" + error.getClass().getSimpleName());
+                closeQuietly();
+            } finally {
+                pendingWrites.decrementAndGet();
+            }
+        });
     }
 
     private void readLoop(InputStream input) throws IOException {
@@ -755,16 +756,7 @@ public final class EncoLink {
     }
 
     private void writeQuietly(byte[] data) {
-        OutputStream stream = output;
-        if (stream == null) {
-            return;
-        }
-        try {
-            stream.write(data);
-            stream.flush();
-        } catch (IOException error) {
-            log("写入失败：" + error.getClass().getSimpleName());
-        }
+        enqueue(data);
     }
 
     private void fail(String message) {
@@ -792,6 +784,8 @@ public final class EncoLink {
     }
 
     private void closeQuietly() {
+        // 让旧链路排队的帧在重连后失效。
+        generation.incrementAndGet();
         output = null;
         BluetoothSocket local = socket;
         socket = null;

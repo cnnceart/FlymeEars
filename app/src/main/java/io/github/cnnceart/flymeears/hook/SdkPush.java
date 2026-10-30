@@ -55,52 +55,61 @@ final class SdkPush {
         if (device == null || callback == null || deviceId == null) {
             return;
         }
-        boolean connected = ModuleState.hasState() && ModuleState.connected();
         if (!ModuleState.hasState()) {
             // 还没有任何广播时不要推“断开”，否则详情页会立刻弹断开提示。
             return;
         }
+        boolean connected = ModuleState.connected();
+        boolean pushed = false;
         if (!haveConnected || connected != lastConnected) {
             haveConnected = true;
             lastConnected = connected;
             pushConnection(connected);
+            pushed = true;
         }
         int mode = ModuleState.mode();
-        if (mode != lastMode) {
+        if (mode > 0 && mode != lastMode) {
             lastMode = mode;
+            pushed = true;
             Host.invoke(callback, "onNoiseControlModeChanged", deviceId, mode);
             Log.i(TAG, "push: 降噪模式回调 -> " + EncoSnapshotName.of(mode));
         }
         int level = ModuleState.ancLevel();
         if (level > 0 && level != lastLevel) {
             lastLevel = level;
+            pushed = true;
             Host.invoke(callback, "onNoiseReductionModeChanged", deviceId, level);
             Log.i(TAG, "push: 降噪档位回调 -> " + level);
         }
         int eq = ModuleState.eq();
         if (eq >= 0 && eq != lastEq) {
             lastEq = eq;
+            pushed = true;
             Host.invoke(callback, "onEqModeChanged", deviceId, eq);
         }
         int highQuality = highQualityModel();
-        if (highQuality != lastHighQuality) {
+        if (highQuality > 0 && highQuality != lastHighQuality) {
             lastHighQuality = highQuality;
+            pushed = true;
             Host.invoke(callback, "onHighQualityAudioModeChanged", deviceId, highQuality);
             Log.i(TAG, "push: 高品质音频回调 -> " + highQuality);
         }
         int lhdcMode = ModuleState.hiRes() ? 18 : 17;
         if (lhdcMode != lastLhdcMode) {
             lastLhdcMode = lhdcMode;
+            pushed = true;
             Host.invoke(callback, "onLhdcAudioModeChanged", deviceId, lhdcMode);
         }
         boolean gameMode = ModuleState.lowLatency();
         if (gameMode != lastGameMode) {
             lastGameMode = gameMode;
+            pushed = true;
             Host.invoke(callback, "onGameModeChanged", deviceId, gameMode);
         }
         boolean dual = ModuleState.dualConnection();
         if (dual != lastDualConnection) {
             lastDualConnection = dual;
+            pushed = true;
             Host.invoke(callback, "onMultipleConnectionsEnabledChanged", deviceId, dual);
             Log.i(TAG, "push: 设备双连回调 -> " + dual);
         }
@@ -109,6 +118,7 @@ final class SdkPush {
         if (!devicesSignature.equals(lastDevices)) {
             lastDevices = devicesSignature;
             if (!devices.isEmpty()) {
+                pushed = true;
                 Host.invoke(callback, "onMultipleConnectDevicesChanged", deviceId,
                         new LinkedHashMap<>(devices));
                 Log.i(TAG, "push: 双连设备表回调 -> " + devices);
@@ -117,28 +127,35 @@ final class SdkPush {
         String name = ModuleState.name();
         if (name != null && !name.isEmpty() && !name.equals(lastName)) {
             lastName = name;
+            pushed = true;
             Host.invoke(callback, "onDeviceNameChanged", deviceId, name);
         }
-        String wear = ModuleState.wearLeft() + "/" + ModuleState.wearRight() + "/"
-                + ModuleState.inBoxLeft() + "/" + ModuleState.inBoxRight();
-        if (!wear.equals(lastWear)) {
-            lastWear = wear;
-            Host.invoke(callback, "onEarphoneWearingStatusChanged", deviceId,
-                    Host.wearingStatus());
+        if (ModuleState.wearValid()) {
+            String wear = ModuleState.wearLeft() + "/" + ModuleState.wearRight() + "/"
+                    + ModuleState.inBoxLeft() + "/" + ModuleState.inBoxRight();
+            if (!wear.equals(lastWear)) {
+                lastWear = wear;
+                pushed = true;
+                Host.invoke(callback, "onEarphoneWearingStatusChanged", deviceId,
+                        Host.wearingStatus());
+            }
         }
         String battery = ModuleState.left() + "/" + ModuleState.right() + "/" + ModuleState.box()
                 + "/" + ModuleState.leftCharging() + ModuleState.rightCharging()
                 + ModuleState.boxCharging();
         if (!battery.equals(lastBattery)) {
             lastBattery = battery;
+            pushed = true;
             try {
                 Host.invoke(callback, "onElectricityOfEarphoneChanged", deviceId, Host.battery());
             } catch (Throwable error) {
                 Log.w(TAG, "push: 电量回调失败", error);
             }
         }
-        // SDK 回调本身会 invalidate；这里再兜底一次，覆盖没有专门回调的字段。
-        Host.notifyObservers();
+        // 没有真正推送时不要再投递 LiveData 事件，避免每个 tick 重绘多次。
+        if (pushed) {
+            Host.notifyObservers();
+        }
     }
 
     /** 宿主侧读到的 model.o：1 AAC / 2 LHDC / 3 LDAC。 */
@@ -153,11 +170,13 @@ final class SdkPush {
         if (codec == OppoWireCodec.CODEC_LHDC) {
             return 2;
         }
-        // 还没读到编码时保持原生默认（AAC），避免把高品质页刷空。
-        return 1;
+        // 还没读到编码时返回 0（未知），由调用方跳过推送，避免把高品质页刷成 AAC。
+        return 0;
     }
 
     private static long lastConnectPush;
+    private static boolean connectPushed;
+    private static Runnable pendingConnectPush;
     private static final long CONNECT_THROTTLE_MS = 10_000L;
 
     private static void pushConnection(boolean connected) {
@@ -165,16 +184,34 @@ final class SdkPush {
         if (connected) {
             // 每次 RFCOMM 重连都走一遍 handleConnectedStateChanged 会让 SDK 反复弹
             // 原生连接弹窗（它的对话框有 double-dismiss 崩溃），这里限流。
+            cancelPendingConnect();
             long now = android.os.SystemClock.elapsedRealtime();
-            if (now - lastConnectPush < CONNECT_THROTTLE_MS) {
-                Log.i(TAG, "push: 忽略重复的连接回调");
+            long wait = connectPushed ? lastConnectPush + CONNECT_THROTTLE_MS - now : 0L;
+            if (wait > 0) {
+                // 窗口内不能直接丢：断开→重连往往发生在 10s 内，窗口末补发一次。
+                if (pendingConnectPush == null) {
+                    pendingConnectPush = () -> {
+                        pendingConnectPush = null;
+                        if (!ModuleState.connected()) {
+                            return;
+                        }
+                        lastConnectPush = android.os.SystemClock.elapsedRealtime();
+                        Host.invoke(Host.wrapper(), "handleConnectedStateChanged",
+                                Host.deviceId(), 2);
+                        Log.i(TAG, "push: 连接回调（补发）-> deviceConnectionSuccessful");
+                    };
+                    MAIN.postDelayed(pendingConnectPush, wait + 50L);
+                }
+                Log.i(TAG, "push: 连接回调延后 " + wait + "ms");
                 return;
             }
+            connectPushed = true;
             lastConnectPush = now;
             Host.invoke(Host.wrapper(), "handleConnectedStateChanged", Host.deviceId(), 2);
             Log.i(TAG, "push: 连接回调 -> deviceConnectionSuccessful");
             return;
         }
+        cancelPendingConnect();
         pendingDisconnect = () -> {
             pendingDisconnect = null;
             if (!ModuleState.connected()) {
@@ -187,29 +224,20 @@ final class SdkPush {
         MAIN.postDelayed(pendingDisconnect, DISCONNECT_DEBOUNCE_MS);
     }
 
+    private static void cancelPendingConnect() {
+        Runnable pending = pendingConnectPush;
+        if (pending != null) {
+            MAIN.removeCallbacks(pending);
+            pendingConnectPush = null;
+        }
+    }
+
     private static void cancelPendingDisconnect() {
         Runnable pending = pendingDisconnect;
         if (pending != null) {
             MAIN.removeCallbacks(pending);
             pendingDisconnect = null;
         }
-    }
-
-    /** 详情页/高品质页刚打开时，把当前状态重新推一遍。 */
-    static void resend() {
-        lastConnected = !lastConnected;
-        lastMode = -1;
-        lastLevel = -1;
-        lastEq = -2;
-        lastHighQuality = -1;
-        lastLhdcMode = -1;
-        lastGameMode = !lastGameMode;
-        lastDualConnection = !lastDualConnection;
-        lastDevices = null;
-        lastName = null;
-        lastWear = null;
-        lastBattery = null;
-        sync();
     }
 
     /** 只给日志用：模式名的轻量包装，避免这里再依赖 EncoSnapshot。 */

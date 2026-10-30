@@ -28,8 +28,6 @@ public final class EqHooks {
     private static final String TAG = "FlymeEars";
     /** o5.c 里「声效调节」EQ 预设对话框的 case 值。 */
     private static final int SOUND_EFFECT_EQ_DIALOG = 1;
-    /** o5.c 里「音效调节」对话框的 case 值。 */
-    private static final int SOUND_EFFECT_DIALOG = 7;
     /** 声效调节里的「自定义」档位。 */
     private static final int SOUND_EFFECT_CUSTOM = 3;
 
@@ -72,20 +70,6 @@ public final class EqHooks {
             return chain.proceed();
         });
         installEntry(module, loader);
-        Method adjust = wrapper.getDeclaredMethod("setSoundAdjustModel", String.class, int.class);
-        module.hook(adjust).intercept(chain -> {
-            String deviceId = (String) chain.getArg(0);
-            int mode = ((Number) chain.getArg(1)).intValue();
-            Log.i(TAG, "eq: setSoundAdjustModel(" + deviceId + ") -> " + mode
-                    + " ours=" + isOurs(deviceId));
-            if (isOurs(deviceId) && mode == SOUND_EFFECT_CUSTOM) {
-                // 原生「自定义」只是设备侧的一个音效模式；换成真正能编辑的曲线页。
-                openCustomEq(chain.getThisObject());
-                Log.i(TAG, "eq: 声效调节自定义 -> 打开曲线页");
-                return true;
-            }
-            return chain.proceed();
-        });
         Log.i(TAG, "eq: 自定义 EQ Hook 已挂载");
     }
 
@@ -105,21 +89,25 @@ public final class EqHooks {
             Method onClick = listener.getDeclaredMethod("onClick",
                     android.content.DialogInterface.class, int.class);
             module.hook(onClick).intercept(chain -> {
-                Object self = chain.getThisObject();
-                int caseId = ((Number) Host.readField(self, "a", "f7813a")).intValue();
-                int which = ((Number) chain.getArg(1)).intValue();
-                Object owner = Host.readField(self, "b", "f7814b");
-                Log.i(TAG, "eq: dialog click case=" + caseId + " which=" + which
-                        + " owner=" + (owner == null ? "null" : owner.getClass().getSimpleName()));
-                // case 1 = 声效调节（EQ 预设）对话框，case 7 = 音效调节对话框；两者最后一项都是「自定义」。
-                if ((caseId == SOUND_EFFECT_EQ_DIALOG || caseId == SOUND_EFFECT_DIALOG)
-                        && which == SOUND_EFFECT_CUSTOM
-                        && owner instanceof android.app.Activity page
-                        && isOurs(deviceIdOf(page))) {
-                    ((android.content.DialogInterface) chain.getArg(0)).dismiss();
-                    openCustomEq(page);
-                    Log.i(TAG, "eq: 声效调节选自定义 -> 打开原生曲线页");
-                    return null;
+                try {
+                    Object self = chain.getThisObject();
+                    int caseId = ((Number) Host.readField(self, "a", "f7813a")).intValue();
+                    int which = ((Number) chain.getArg(1)).intValue();
+                    Object owner = Host.readField(self, "b", "f7814b");
+                    Log.i(TAG, "eq: dialog click case=" + caseId + " which=" + which
+                            + " owner=" + (owner == null ? "null" : owner.getClass().getSimpleName()));
+                    // 只有 case 1（EQ 模式对话框）的第 4 项是「自定义」；case 7 的 l5.l 没有自定义项。
+                    if (caseId == SOUND_EFFECT_EQ_DIALOG
+                            && which == SOUND_EFFECT_CUSTOM
+                            && owner instanceof android.app.Activity page
+                            && isOurs(deviceIdOf(page))) {
+                        ((android.content.DialogInterface) chain.getArg(0)).dismiss();
+                        openCustomEq(page);
+                        Log.i(TAG, "eq: 声效调节选自定义 -> 打开原生曲线页");
+                        return null;
+                    }
+                } catch (Throwable error) {
+                    Log.w(TAG, "eq: 对话框拦截失败，交回宿主", error);
                 }
                 return chain.proceed();
             });

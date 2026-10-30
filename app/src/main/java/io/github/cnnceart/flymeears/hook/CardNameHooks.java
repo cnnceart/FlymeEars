@@ -71,17 +71,25 @@ public final class CardNameHooks {
             }
             out.addRow(row.clone());
         }
+        if (!changed) {
+            // 没有改写就原样返回；close 之后再把同一个 cursor 交回宿主会让 provider 返回空结果。
+            return result;
+        }
         cursor.close();
-        if (changed && !logged) {
+        if (!logged) {
             logged = true;
             Log.i(TAG, "card: 卡片名称已用蓝牙全名修正");
         }
-        return changed ? out : cursor;
+        return out;
     }
 
     /** 短名（去掉品牌前缀）→ 蓝牙全名；已包含全名时原样返回。 */
     static String withFullName(String json) {
-        String full = DeviceListHooks.ourName();
+        return withFullName(json, DeviceListHooks.ourName());
+    }
+
+    /** 纯函数版本，便于单测；full 为空时原样返回。 */
+    static String withFullName(String json, String full) {
         if (json == null || full == null || full.isEmpty() || json.contains(full)) {
             return json;
         }

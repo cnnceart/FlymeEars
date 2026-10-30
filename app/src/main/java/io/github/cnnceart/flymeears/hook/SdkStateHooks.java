@@ -61,39 +61,58 @@ public final class SdkStateHooks {
     private static volatile Runnable cardListener;
     private static volatile Object wrapperInstance;
     private static volatile Runnable wearListener;
-    private static long lastCardPush;
     private static String lastCardSignature;
 
     private SdkStateHooks() {
     }
 
-    public static void install(XposedModule module, ClassLoader classLoader) {
-        loader = classLoader;
+    /** 单个安装点失败只记日志，不能拖垮后续 hook。 */
+    private interface Step {
+        void run() throws Exception;
+    }
+
+    private static void step(String name, Step body) {
         try {
-            installConnected(module);
-            installAddress(module);
-            installCacheDevice(module);
-            installStatusModel(module);
-            installBattery(module);
-            installAnc(module);
-            installEq(module);
-            installExtras(module);
-            installDisconnect(module);
-            installWearing(module);
-            installRename(module);
-            installBatteryCharging(module);
-            installBatteryUnit(module);
-            installWearPush(module);
-            installCfgActivity(module);
-            CodecPageHooks.install(module, loader);
-            DualConnectHooks.install(module, loader);
-            EqHooks.install(module, loader);
-            CardNameHooks.install(module, loader);
-            installDeviceCenter(module);
-            Log.i(TAG, "sdk: 宿主 SDK 伪装 Hook 已挂载");
+            body.run();
         } catch (Throwable error) {
-            Log.e(TAG, "sdk: Hook 失败", error);
+            Log.e(TAG, "sdk: 安装失败: " + name, error);
         }
+    }
+
+    public static void install(XposedModule module, ClassLoader classLoader) {
+        if (loader != null && loader != classLoader) {
+            resetCaches();
+        }
+        loader = classLoader;
+        step("connected", () -> installConnected(module));
+        step("address", () -> installAddress(module));
+        step("cache-device", () -> installCacheDevice(module));
+        step("status-model", () -> installStatusModel(module));
+        step("battery", () -> installBattery(module));
+        step("anc", () -> installAnc(module));
+        step("eq", () -> installEq(module));
+        step("extras", () -> installExtras(module));
+        step("disconnect", () -> installDisconnect(module));
+        step("wearing", () -> installWearing(module));
+        step("rename", () -> installRename(module));
+        step("battery-charging", () -> installBatteryCharging(module));
+        step("battery-unit", () -> installBatteryUnit(module));
+        step("wear-push", () -> installWearPush(module));
+        step("cfg-activity", () -> installCfgActivity(module));
+        step("codec-page", () -> CodecPageHooks.install(module, loader));
+        step("dual-connect", () -> DualConnectHooks.install(module, loader));
+        step("eq-hooks", () -> EqHooks.install(module, loader));
+        step("card-name", () -> CardNameHooks.install(module, loader));
+        step("device-center", () -> installDeviceCenter(module));
+        Log.i(TAG, "sdk: 宿主 SDK 伪装 Hook 已挂载");
+    }
+
+    private static void resetCaches() {
+        cfgActivity = new WeakReference<>(null);
+        remotePrefImpl = null;
+        wrapperInstance = null;
+        lastCardSignature = null;
+        Log.i(TAG, "sdk: ClassLoader 变化，清理缓存");
     }
 
     /** isConnected：第三方设备的连接态以 SystemUI 会话为准。 */
@@ -400,7 +419,7 @@ public final class SdkStateHooks {
     private static long lastAncModeAt;
 
     /** 同一档位 400ms 内重复下发（单选项重设会再触发一次监听）直接丢掉。 */
-    private static boolean duplicateAnc(int mode) {
+    private static synchronized boolean duplicateAnc(int mode) {
         long now = android.os.SystemClock.elapsedRealtime();
         boolean duplicate = mode == lastAncMode && now - lastAncModeAt < 400L;
         lastAncMode = mode;
@@ -410,7 +429,6 @@ public final class SdkStateHooks {
 
     /** 让设备中心卡片立刻重读状态（跳过 1.5s 去抖）。 */
     static void pushCardNow() {
-        lastCardPush = 0L;
         lastCardSignature = null;
         pushCard();
     }
@@ -820,6 +838,20 @@ public final class SdkStateHooks {
                     .postDelayed(SdkStateHooks::pushCardNow, 600L);
             return result;
         });
+        // 放在最后：即使宿主版本里 onDestroy 取不到，也不影响上面的推送链路。
+        Method onDestroy = findInherited(service, "onDestroy");
+        module.hook(onDestroy).intercept(chain -> {
+            Object result = chain.proceed();
+            try {
+                Object destroyed = readField(chain.getThisObject(), "a", "f4671a");
+                if (destroyed != null && destroyed == remotePrefImpl) {
+                    remotePrefImpl = null;
+                }
+            } catch (Throwable error) {
+                Log.w(TAG, "sdk: 设备中心服务销毁处理失败", error);
+            }
+            return result;
+        });
         Log.i(TAG, "sdk: 设备中心推送 Hook 已挂载");
     }
 
@@ -838,17 +870,18 @@ public final class SdkStateHooks {
                 + ModuleState.leftCharging() + "/" + ModuleState.rightCharging() + "/"
                 + ModuleState.boxCharging() + "/" + ModuleState.codec() + "/"
                 + ModuleState.lowLatency() + "/" + ModuleState.dualConnection();
-        if (signature.equals(lastCardSignature)) {
-            return;
-        }
-        lastCardSignature = signature;
         try {
             Object callback = readField(impl, "bcmCallback");
             Object device = DeviceListHooks.injectedDevice();
             String deviceId = DeviceListHooks.ourAddress();
             if (callback == null || device == null || deviceId == null) {
+                // 地址还没解析出来时不要记签名，否则状态不变就再也不会重试。
                 return;
             }
+            if (signature.equals(lastCardSignature)) {
+                return;
+            }
+            lastCardSignature = signature;
             // 未连接时必须走 deviceDisconnected：卡片才会显示「连接」入口，
             // 降噪按钮也才会置灰。之前无条件推 deviceConnectionSuccessful，
             // 卡片就一直是「已连接 + 降噪点亮」的样式。
@@ -862,13 +895,16 @@ public final class SdkStateHooks {
                     .invoke(callback, device);
             findMethod(callback.getClass(), "onNoiseControlModeChanged", 2)
                     .invoke(callback, deviceId, ModuleState.mode());
-            Object wearing = wearingStatus();
-            if (wearing != null) {
-                findMethod(callback.getClass(), "earphoneWearingStatusChanged", 2)
-                        .invoke(callback, deviceId, wearing);
+            if (ModuleState.wearValid()) {
+                Object wearing = wearingStatus();
+                if (wearing != null) {
+                    findMethod(callback.getClass(), "earphoneWearingStatusChanged", 2)
+                            .invoke(callback, deviceId, wearing);
+                }
             }
             Log.i(TAG, "sdk: 已向设备中心推送状态");
         } catch (Throwable error) {
+            lastCardSignature = null;
             Log.w(TAG, "sdk: 推送设备中心失败", error);
         }
     }
@@ -900,11 +936,16 @@ public final class SdkStateHooks {
     }
 
     private static boolean isOurs(String deviceId) {
-        if (deviceId == null || deviceId.isEmpty()) {
+        try {
+            if (deviceId == null || deviceId.isEmpty()) {
+                return false;
+            }
+            String ours = DeviceListHooks.ourAddress();
+            return ours != null && ours.equalsIgnoreCase(deviceId);
+        } catch (Throwable error) {
+            Log.w(TAG, "sdk: 解析设备身份失败", error);
             return false;
         }
-        String ours = DeviceListHooks.ourAddress();
-        return ours != null && ours.equalsIgnoreCase(deviceId);
     }
 
     private static String deviceId(Object device) {

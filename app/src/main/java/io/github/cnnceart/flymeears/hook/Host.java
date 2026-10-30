@@ -76,6 +76,12 @@ final class Host {
         return local;
     }
 
+    /** ClassLoader 变化时丢弃旧实例，避免把旧 loader 的类交给新 loader 的宿主代码。 */
+    static synchronized void resetForLoaderChange() {
+        wrapper = null;
+        wrapperFailureLogged = false;
+    }
+
     /** 注入的那条 AudioDevice。 */
     static Object device() {
         return DeviceListHooks.injectedDevice();

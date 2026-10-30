@@ -4,7 +4,6 @@ import android.app.Activity;
 import android.content.Intent;
 import android.util.Log;
 
-import java.lang.ref.WeakReference;
 import java.lang.reflect.Method;
 
 import io.github.cnnceart.flymeears.EncoIntents;
@@ -23,8 +22,6 @@ public final class DualConnectHooks {
     private static final String PAGE =
             "com.meizu.earphone.biz.configuration.activity.CfgDoubleConnectActivity";
 
-    private static volatile WeakReference<Activity> page = new WeakReference<>(null);
-
     private DualConnectHooks() {
     }
 
@@ -34,7 +31,6 @@ public final class DualConnectHooks {
         module.hook(onCreate).intercept(chain -> {
             Object result = chain.proceed();
             if (chain.getThisObject() instanceof Activity activity) {
-                page = new WeakReference<>(activity);
                 // 让 SystemUI 会话补一次 0x0112，双连设备表才能填上名字。
                 try {
                     activity.sendBroadcast(new Intent(EncoIntents.ACTION_CYCLE)
@@ -75,20 +71,15 @@ public final class DualConnectHooks {
     }
 
     private static void render() {
-        Activity activity = page.get();
-        if (activity == null || activity.isFinishing() || activity.isDestroyed()) {
-            return;
-        }
         try {
             Object device = DeviceListHooks.injectedDevice();
             if (device == null) {
                 return;
             }
+            // 页面自己观察 device.m()（宿主 CfgDoubleConnectActivity.onCreate），
+            // 写回模型后通知 LiveData 即可，不再直接调 Activity 方法。
             SdkStateHooks.applyDeviceState(device);
-            Object model = Host.call(device, "n");
-            if (model != null) {
-                Host.findMethod(activity.getClass(), "j", 1).invoke(activity, model);
-            }
+            Host.notifyObservers();
         } catch (Throwable error) {
             Log.w(TAG, "dual: 刷新双连页失败", error);
         }
