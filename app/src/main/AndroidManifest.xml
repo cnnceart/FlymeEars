@@ -59,18 +59,6 @@
         </service>
         -->
 
-        <!-- 控制中心「降噪」磁贴 -->
-        <service
-            android:name="io.github.cnnceart.flymeears.ui.AncTileService"
-            android:exported="true"
-            android:label="降噪"
-            android:icon="@android:drawable/ic_lock_silent_mode"
-            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
-            <intent-filter>
-                <action android:name="android.service.quicksettings.action.QS_TILE" />
-            </intent-filter>
-        </service>
-
         <provider
             android:name="io.github.cnnceart.flymeears.popup.ArtProvider"
             android:authorities="${applicationId}.art"

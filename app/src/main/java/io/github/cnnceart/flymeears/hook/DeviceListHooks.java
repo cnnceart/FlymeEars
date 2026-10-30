@@ -94,28 +94,6 @@ public final class DeviceListHooks {
             Log.e(TAG, "device list: 列表 Hook 失败", error);
         }
 
-        // 原生 MainActivity 只按"魅族缓存列表"决定去配对页还是设备页；
-        // 第三方设备不在缓存里，所以这里直接在同进程拉起设备页。
-        try {
-            Class<?> main = Class.forName("com.meizu.earphone.MainActivity", false, classLoader);
-            Method onCreate = main.getDeclaredMethod("onCreate", android.os.Bundle.class);
-            module.hook(onCreate).intercept(chain -> {
-                Object result = chain.proceed();
-                try {
-                    if (chain.getThisObject() instanceof android.app.Activity activity) {
-                        ModuleState.ensure(activity);
-                    }
-                    redirect(chain.getThisObject());
-                } catch (Throwable error) {
-                    Log.w(TAG, "device list: 跳转失败", error);
-                }
-                return result;
-            });
-            Log.i(TAG, "device list: 入口 Hook 已挂载");
-        } catch (Throwable error) {
-            Log.e(TAG, "device list: 入口 Hook 失败", error);
-        }
-
         installRowDecoration(module, classLoader);
     }
 
@@ -286,39 +264,6 @@ public final class DeviceListHooks {
         }
         String normalized = deviceName.toLowerCase(java.util.Locale.ROOT).replace(" ", "");
         return normalized.contains("oppo") || normalized.contains("enco");
-    }
-
-    /** 有第三方设备时，绕开"添加设备"引导页，直接进设备列表。 */
-    private static void redirect(Object activity) {
-        if (!(activity instanceof android.app.Activity host)) {
-            return;
-        }
-        boolean available;
-        try {
-            available = device() != null;
-        } catch (Throwable error) {
-            Log.w(TAG, "device list: 解析设备失败", error);
-            available = false;
-        }
-        Log.i(TAG, "device list: 入口检查 available=" + available);
-        if (!available) {
-            return;
-        }
-        android.view.View decor = host.getWindow() == null ? null : host.getWindow().getDecorView();
-        if (decor == null) {
-            return;
-        }
-        decor.postDelayed(() -> {
-            try {
-                android.content.Intent intent = new android.content.Intent()
-                        .setClassName(host, "com.meizu.earphone.biz.deviceList.activity.DeviceListActivity")
-                        .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK);
-                host.startActivity(intent);
-                Log.i(TAG, "device list: 已跳转设备列表");
-            } catch (Throwable error) {
-                Log.w(TAG, "device list: 启动设备列表失败", error);
-            }
-        }, 800L);
     }
 
     private static boolean hasDevice() {
