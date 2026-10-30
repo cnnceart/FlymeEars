@@ -47,6 +47,8 @@ public final class SdkStateHooks {
     private static ClassLoader loader;
     private static volatile WeakReference<Activity> cfgActivity = new WeakReference<>(null);
     private static volatile Runnable cfgListener;
+    private static volatile Runnable hqListener;
+    private static volatile WeakReference<Activity> hqActivity = new WeakReference<>(null);
     private static volatile Activity cfgListenerOwner;
     private static volatile Object remotePrefImpl;
     private static volatile Runnable cardListener;
@@ -76,6 +78,7 @@ public final class SdkStateHooks {
             installBatteryUnit(module);
             installWearPush(module);
             installCfgActivity(module);
+            installHighQualityPage(module);
             installDeviceCenter(module);
             Log.i(TAG, "sdk: 宿主 SDK 伪装 Hook 已挂载");
         } catch (Throwable error) {
@@ -691,6 +694,57 @@ public final class SdkStateHooks {
 
     private static volatile Boolean lastConnected;
 
+    /** 高品质音频页是独立 Activity，停留时也要跟随状态刷新选项/开关。 */
+    private static void installHighQualityPage(XposedModule module) throws Exception {
+        Class<?> type = Class.forName(
+                "com.meizu.earphone.biz.configuration.activity.CfgHighQualityActivity",
+                false, loader);
+        Method resume = type.getDeclaredMethod("onResume");
+        module.hook(resume).intercept(chain -> {
+            Object result = chain.proceed();
+            hqActivity = new WeakReference<>((Activity) chain.getThisObject());
+            if (hqListener == null) {
+                hqListener = SdkStateHooks::refreshHighQuality;
+                ModuleState.addListener(hqListener);
+            }
+            return result;
+        });
+        Method pause = type.getDeclaredMethod("onPause");
+        module.hook(pause).intercept(chain -> {
+            Object result = chain.proceed();
+            Runnable listener = hqListener;
+            if (listener != null) {
+                ModuleState.removeListener(listener);
+                hqListener = null;
+            }
+            hqActivity = new WeakReference<>(null);
+            return result;
+        });
+    }
+
+    private static void refreshHighQuality() {
+        Activity activity = hqActivity.get();
+        if (activity == null || activity.isFinishing() || activity.isDestroyed()) {
+            return;
+        }
+        try {
+            Object device = DeviceListHooks.injectedDevice();
+            if (device == null) {
+                device = readField(activity, "device");
+            }
+            if (device == null) {
+                return;
+            }
+            applyState(device);
+            Object model = call(device, "n");
+            if (model != null) {
+                findMethod(activity.getClass(), "m", 1).invoke(activity, model);
+            }
+        } catch (Throwable error) {
+            Log.w(TAG, "sdk: 刷新高品质页失败", error);
+        }
+    }
+
     private static void refresh(Activity activity) {
         if (activity == null || activity.isFinishing() || activity.isDestroyed()) {
             return;
@@ -714,6 +768,13 @@ public final class SdkStateHooks {
             if (model != null) {
                 Method changed = findMethod(viewModel.getClass(), "refreshDateByChanged", 1);
                 changed.invoke(viewModel, model);
+                // 高品质音频页的选择态/开关由 m(model) 套用，页面停留时也要重跑。
+                try {
+                    Method apply = findMethod(activity.getClass(), "m", 1);
+                    apply.invoke(activity, model);
+                } catch (Throwable ignored) {
+                    // 其他页面没有这个方法。
+                }
             }
         } catch (Throwable error) {
             Log.w(TAG, "sdk: 刷新详情页失败", error);
