@@ -166,8 +166,7 @@ public final class XposedInit extends XposedModule {
                 Object result = chain.proceed();
                 try {
                     android.app.Application application = (android.app.Application) chain.getThisObject();
-                    io.github.cnnceart.flymeears.systemui.EncoSession.start(application,
-                            getRemotePreferences("flymeears"));
+                    io.github.cnnceart.flymeears.systemui.EncoSession.start(application);
                     registerControlReceiver(application);
                 } catch (Throwable error) {
                     log(Log.ERROR, TAG, "session: 启动失败", error);
