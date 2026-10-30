@@ -35,6 +35,8 @@ public final class EncoSession implements EncoLink.Listener {
     private String currentAddress;
     private String currentName;
     private boolean popupShown;
+    /** 用户主动断开后先别自动回连，等音频路由消失再恢复。 */
+    private volatile boolean userDisconnected;
     private volatile EncoSnapshot snapshot;
     private volatile boolean lowLatency;
     private volatile boolean dualConnection;
@@ -47,6 +49,13 @@ public final class EncoSession implements EncoLink.Listener {
     private int lastCase = -1;
     /** 0x0112 多设备表，断开后仍保留，避免双连页被刷空。 */
     private volatile String[] dualDevices = new String[0];
+    /**
+     * 最近一次充电状态。断链（盒子插电、关盖、进盒）时链路会掉一下，
+     * 这里要沿用旧值，不能因为一次断连就把闪电清掉。
+     */
+    private volatile boolean leftCharging;
+    private volatile boolean rightCharging;
+    private volatile boolean caseCharging;
 
     private EncoSession(Context context) {
         this.context = context;
@@ -115,7 +124,7 @@ public final class EncoSession implements EncoLink.Listener {
                 reconcile();
             }
             String address = currentAddress;
-            if (address != null && !link.isRunning()) {
+            if (address != null && !link.isRunning() && !userDisconnected) {
                 Log.i(TAG, "session: 补连 " + address);
                 link.start(address, currentName, EncoSession.this);
             }
@@ -127,6 +136,62 @@ public final class EncoSession implements EncoLink.Listener {
 
     public EncoSnapshot snapshot() {
         return snapshot;
+    }
+
+    /**
+     * 用户主动断开：先停私有链路，再断 A2DP。
+     *
+     * <p>只 stop 链路不解决任何问题——音频路由还在，看门狗又会连回来，
+     * 所以要连蓝牙音频一起断，等用户重新连接时再自动接管。
+     */
+    public void disconnect() {
+        String address = currentAddress;
+        Log.i(TAG, "session: 用户断开耳机 " + address);
+        userDisconnected = true;
+        link.stop();
+        currentAddress = null;
+        popupShown = false;
+        broadcastDisconnected();
+        snapshot = null;
+        if (address == null) {
+            return;
+        }
+        BluetoothAdapter adapter = BluetoothAdapter.getDefaultAdapter();
+        if (adapter == null) {
+            return;
+        }
+        BluetoothDevice device;
+        try {
+            device = adapter.getRemoteDevice(address);
+        } catch (Throwable error) {
+            return;
+        }
+        try {
+            adapter.getProfileProxy(context, new android.bluetooth.BluetoothProfile.ServiceListener() {
+                @Override
+                public void onServiceConnected(int profile, android.bluetooth.BluetoothProfile proxy) {
+                    try {
+                        proxy.getClass().getMethod("disconnect", BluetoothDevice.class)
+                                .invoke(proxy, device);
+                        Log.i(TAG, "session: 已请求断开 A2DP");
+                    } catch (Throwable error) {
+                        Log.w(TAG, "session: 断开 A2DP 失败", error);
+                    } finally {
+                        try {
+                            adapter.closeProfileProxy(profile, proxy);
+                        } catch (Throwable ignored) {
+                            // 关闭代理失败不影响断开。
+                        }
+                    }
+                }
+
+                @Override
+                public void onServiceDisconnected(int profile) {
+                }
+            }, android.bluetooth.BluetoothProfile.A2DP);
+        } catch (Throwable error) {
+            Log.w(TAG, "session: 取 A2DP 代理失败", error);
+        }
     }
 
     /** 当前是否有一副可控的 OPPO/Enco 耳机。 */
@@ -197,6 +262,19 @@ public final class EncoSession implements EncoLink.Listener {
         }
     }
 
+    /** 充电态（含"在盒即充电"推断），设备中心卡片用。 */
+    public static boolean chargingOf(String side) {
+        EncoSession session = instance;
+        if (session == null) {
+            return false;
+        }
+        return switch (side) {
+            case "left" -> session.leftCharging;
+            case "right" -> session.rightCharging;
+            default -> session.caseCharging;
+        };
+    }
+
     /** 详情页「音效」行设置 EQ 模式。 */
     public void setEq(int mode) {
         link.requestEq(mode);
@@ -245,6 +323,9 @@ public final class EncoSession implements EncoLink.Listener {
             if (name == null || !looksLikeEnco(name)) {
                 continue;
             }
+            if (userDisconnected) {
+                return;
+            }
             if (!address.equals(currentAddress)) {
                 currentAddress = address;
                 currentName = name;
@@ -254,7 +335,11 @@ public final class EncoSession implements EncoLink.Listener {
             }
             return;
         }
-        if (currentAddress != null) {
+        if (currentAddress != null || userDisconnected) {
+            if (userDisconnected && currentAddress == null) {
+                // 路由已经消失，允许下一次自动接管。
+                userDisconnected = false;
+            }
             Log.i(TAG, "session: 设备已断开，释放链路");
             broadcastDisconnected();
             currentAddress = null;
@@ -294,6 +379,9 @@ public final class EncoSession implements EncoLink.Listener {
             personalSound = prefs.getBoolean("personal_sound", false);
             codecType = prefs.getInt("codec", -1);
             hiRes = prefs.getBoolean("hi_res", false);
+            leftCharging = prefs.getBoolean("left_charging", false);
+            rightCharging = prefs.getBoolean("right_charging", false);
+            caseCharging = prefs.getBoolean("box_charging", false);
         } catch (Throwable error) {
             Log.w(TAG, "session: 读取开关缓存失败", error);
         }
@@ -307,6 +395,9 @@ public final class EncoSession implements EncoLink.Listener {
                     .putBoolean("personal_sound", personalSound)
                     .putInt("codec", codecType)
                     .putBoolean("hi_res", hiRes)
+                    .putBoolean("left_charging", leftCharging)
+                    .putBoolean("right_charging", rightCharging)
+                    .putBoolean("box_charging", caseCharging)
                     .apply();
         } catch (Throwable error) {
             Log.w(TAG, "session: 保存开关缓存失败", error);
@@ -338,7 +429,12 @@ public final class EncoSession implements EncoLink.Listener {
         if (value.caseBattery >= 0) {
             lastCase = value.caseBattery;
         }
+        // 0x8106 在盒里不置 bit7，按 0x0109「在盒=4」补上充电态。
+        leftCharging = value.leftCharging || value.leftStatus == 4;
+        rightCharging = value.rightCharging || value.rightStatus == 4;
+        caseCharging = value.caseCharging;
         saveLastBattery();
+        saveFlags();
         try {
             android.content.Intent state = new android.content.Intent(
                     io.github.cnnceart.flymeears.EncoIntents.ACTION_STATE)
@@ -362,11 +458,11 @@ public final class EncoSession implements EncoLink.Listener {
                     .putExtra(io.github.cnnceart.flymeears.EncoIntents.EXTRA_IN_BOX_RIGHT,
                             value.rightStatus == 4)
                     .putExtra(io.github.cnnceart.flymeears.EncoIntents.EXTRA_LEFT_CHARGING,
-                            value.leftCharging)
+                            leftCharging)
                     .putExtra(io.github.cnnceart.flymeears.EncoIntents.EXTRA_RIGHT_CHARGING,
-                            value.rightCharging)
+                            rightCharging)
                     .putExtra(io.github.cnnceart.flymeears.EncoIntents.EXTRA_BOX_CHARGING,
-                            value.caseCharging)
+                            caseCharging)
                     .putExtra(io.github.cnnceart.flymeears.EncoIntents.EXTRA_LEFT, lastLeft)
                     .putExtra(io.github.cnnceart.flymeears.EncoIntents.EXTRA_RIGHT, lastRight)
                     .putExtra(io.github.cnnceart.flymeears.EncoIntents.EXTRA_CASE, lastCase)
@@ -401,7 +497,14 @@ public final class EncoSession implements EncoLink.Listener {
                     .putExtra(io.github.cnnceart.flymeears.EncoIntents.EXTRA_PERSONAL_SOUND,
                             personalSound)
                     .putExtra(io.github.cnnceart.flymeears.EncoIntents.EXTRA_CODEC, codecType)
-                    .putExtra(io.github.cnnceart.flymeears.EncoIntents.EXTRA_HI_RES, hiRes);
+                    .putExtra(io.github.cnnceart.flymeears.EncoIntents.EXTRA_HI_RES, hiRes)
+                    // 断链的一瞬间也要带着充电态，否则闪电会闪一下。
+                    .putExtra(io.github.cnnceart.flymeears.EncoIntents.EXTRA_LEFT_CHARGING,
+                            leftCharging)
+                    .putExtra(io.github.cnnceart.flymeears.EncoIntents.EXTRA_RIGHT_CHARGING,
+                            rightCharging)
+                    .putExtra(io.github.cnnceart.flymeears.EncoIntents.EXTRA_BOX_CHARGING,
+                            caseCharging);
             context.sendBroadcast(new android.content.Intent(state).setPackage("com.meizu.earphone"));
             context.sendBroadcast(new android.content.Intent(state)
                     .setPackage(io.github.cnnceart.flymeears.BuildConfig.APPLICATION_ID));
@@ -415,7 +518,25 @@ public final class EncoSession implements EncoLink.Listener {
         return normalized.contains("oppo") || normalized.contains("enco");
     }
 
+    /**
+     * 设备名优先用蓝牙层的完整名称。
+     *
+     * <p>{@code AudioDeviceInfo.getProductName()} 有时只回短名（"Enco X2"），
+     * 卡片和详情页就会在两个名字之间跳，所以能用配对名就先用配对名。
+     */
     private String resolveName(AudioDeviceInfo output, String address) {
+        String bluetoothName = null;
+        try {
+            BluetoothAdapter adapter = BluetoothAdapter.getDefaultAdapter();
+            if (adapter != null) {
+                bluetoothName = adapter.getRemoteDevice(address).getName();
+            }
+        } catch (Throwable error) {
+            Log.w(TAG, "session: 取蓝牙名失败（权限？）", error);
+        }
+        if (bluetoothName != null && !bluetoothName.isEmpty()) {
+            return bluetoothName;
+        }
         try {
             CharSequence product = output.getProductName();
             if (product != null && product.length() > 0) {
@@ -423,18 +544,6 @@ public final class EncoSession implements EncoLink.Listener {
             }
         } catch (Throwable ignored) {
             // 取不到产品名时继续尝试蓝牙层。
-        }
-        try {
-            BluetoothAdapter adapter = BluetoothAdapter.getDefaultAdapter();
-            if (adapter != null) {
-                BluetoothDevice device = adapter.getRemoteDevice(address);
-                String name = device.getName();
-                if (name != null) {
-                    return name;
-                }
-            }
-        } catch (Throwable error) {
-            Log.w(TAG, "session: 取设备名失败（权限？）", error);
         }
         return null;
     }

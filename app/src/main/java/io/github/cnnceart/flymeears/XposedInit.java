@@ -28,7 +28,8 @@ public final class XposedInit extends XposedModule {
         ClassLoader loader = param.getClassLoader();
         log(Log.INFO, TAG, "package ready: " + packageName, null);
         // 同时写 logcat，便于不借助 LSPosed 日志做真机排查。
-        android.util.Log.i(TAG, "package ready: " + packageName);
+        android.util.Log.i(TAG, "package ready: " + packageName + " pid="
+                + android.os.Process.myPid());
 
         if ("com.android.systemui".equals(packageName)) {
             probe(loader, "com.flyme.systemui.volume.QSVolumeControllerImpl");
@@ -56,6 +57,7 @@ public final class XposedInit extends XposedModule {
         filter.addAction(io.github.cnnceart.flymeears.EncoIntents.ACTION_SET_CODEC);
         filter.addAction(io.github.cnnceart.flymeears.EncoIntents.ACTION_SET_EQ);
         filter.addAction(io.github.cnnceart.flymeears.EncoIntents.ACTION_SET_CURVE);
+        filter.addAction(io.github.cnnceart.flymeears.EncoIntents.ACTION_DISCONNECT);
         android.content.BroadcastReceiver receiver = new android.content.BroadcastReceiver() {
             @Override
             public void onReceive(android.content.Context context, android.content.Intent intent) {
@@ -72,6 +74,12 @@ public final class XposedInit extends XposedModule {
                         session.setEq(eq);
                         android.util.Log.i(TAG, "session: 设置 EQ " + eq);
                     }
+                    return;
+                }
+                if (io.github.cnnceart.flymeears.EncoIntents.ACTION_DISCONNECT
+                        .equals(intent.getAction())) {
+                    session.disconnect();
+                    android.util.Log.i(TAG, "session: 收到断开请求");
                     return;
                 }
                 if (io.github.cnnceart.flymeears.EncoIntents.ACTION_SET_CURVE

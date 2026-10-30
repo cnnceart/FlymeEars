@@ -41,6 +41,9 @@ public final class EncoIntents {
 
     public static final String EXTRA_EQ = "eq";
 
+    /** 宿主（详情页 / 设备中心卡片）→ SystemUI：断开这副耳机。 */
+    public static final String ACTION_DISCONNECT = "io.github.cnnceart.flymeears.action.DISCONNECT";
+
     /** 「自定义 EQ」页 → SystemUI：下发 10 段增益曲线（0x0411 + 0x040E）。 */
     public static final String ACTION_SET_CURVE = "io.github.cnnceart.flymeears.action.SET_CURVE";
     /** 10 段增益，单位 dB，顺序同 EqualizerView 的频点。 */

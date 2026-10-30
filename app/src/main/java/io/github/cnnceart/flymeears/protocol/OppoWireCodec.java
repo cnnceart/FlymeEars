@@ -36,6 +36,9 @@ public final class OppoWireCodec {
     /** 黄金听感 / 自定义曲线：0x0411 选设备内档案，0x040E 写 12 段增益。 */
     public static final int SET_EAR_RESTORE = 0x0411;
     public static final int SET_HEARING_CURVE = 0x040E;
+    /** 让耳机按阈值算出滤波系数；耳机用通知回传系数，再原样 0x0415 回填。 */
+    public static final int QUERY_HEARING_FILTER = 0x0116;
+    public static final int SET_EAR_SCAN = 0x0415;
     /** 欢律「黄金听感」抓包里的 restoreDesId。 */
     public static final int HEARING_PROFILE_ID = 0x12;
     /** 设备可选增益档位（dB，实测 12 档，见 docs/protocol-oppo-enco.md）。 */
@@ -109,6 +112,51 @@ public final class OppoWireCodec {
         payload[offset] = (byte) (profileId & 0xFF);
         System.arraycopy(label, 0, payload, offset + 1, label.length);
         return packet(SET_HEARING_CURVE, payload);
+    }
+
+    /** 0x0116：把同一组阈值发给耳机，请它算滤波系数。 */
+    public static byte[] hearingFilterRequest(int[] leftDb, int[] rightDb, int profileId) {
+        require(leftDb.length == rightDb.length, "channel length mismatch");
+        int bands = leftDb.length;
+        byte[] payload = new byte[1 + bands * 6 + 4];
+        payload[0] = (byte) (bands * 2);
+        int offset = 1;
+        for (int band = 0; band < bands; band++) {
+            payload[offset++] = 0x01;
+            payload[offset++] = (byte) (band + 1);
+            payload[offset++] = (byte) hearStep(leftDb[band]);
+        }
+        for (int band = 0; band < bands; band++) {
+            payload[offset++] = 0x02;
+            payload[offset++] = (byte) (band + 1);
+            payload[offset++] = (byte) hearStep(rightDb[band]);
+        }
+        payload[offset++] = (byte) ((profileId >>> 24) & 0xFF);
+        payload[offset++] = (byte) ((profileId >>> 16) & 0xFF);
+        payload[offset++] = (byte) ((profileId >>> 8) & 0xFF);
+        payload[offset] = (byte) (profileId & 0xFF);
+        return packet(QUERY_HEARING_FILTER, payload);
+    }
+
+    /**
+     * 0x0415：把耳机回传的系数原样发回去。
+     *
+     * <p>结构 {@code 03 | dataLen(LE16) | data | uid(BE)}，与耳机上报的
+     * ear-scan 事件同构；手机侧只负责转发，不解释内容。
+     */
+    public static byte[] earScanData(byte[] data, int profileId) {
+        require(data.length <= 0xFFFF, "filter data too large");
+        byte[] payload = new byte[3 + data.length + 4];
+        payload[0] = 0x03;
+        payload[1] = (byte) (data.length & 0xFF);
+        payload[2] = (byte) ((data.length >>> 8) & 0xFF);
+        System.arraycopy(data, 0, payload, 3, data.length);
+        int offset = 3 + data.length;
+        payload[offset++] = (byte) ((profileId >>> 24) & 0xFF);
+        payload[offset++] = (byte) ((profileId >>> 16) & 0xFF);
+        payload[offset++] = (byte) ((profileId >>> 8) & 0xFF);
+        payload[offset] = (byte) (profileId & 0xFF);
+        return packet(SET_EAR_SCAN, payload);
     }
 
     /** 把任意 dB 值吸附到设备支持的 12 个档位。 */

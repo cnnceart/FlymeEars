@@ -25,6 +25,8 @@ public final class Artwork {
     private static final ConcurrentHashMap<String, Bitmap> CACHE = new ConcurrentHashMap<>();
 
     public static final String CASE = "enco_case.png";
+    /** 设备中心卡片用：黑色开盖盒 + 耳机，和白色魅族盒区别明显。 */
+    public static final String CARD = "enco_card.png";
     public static final String PAIR = "enco_art.png";
 
     private Artwork() {
@@ -82,6 +84,19 @@ public final class Artwork {
         }
         return context.getContentResolver().openInputStream(
                 Uri.parse("content://" + AUTHORITY + "/" + name));
+    }
+
+    /** 同 {@link #apply}，但返回是否真的换上了（失败时调用方应保留原图）。 */
+    public static boolean applyChecked(ImageView view, String name, int maxPixels) {
+        if (view == null) {
+            return false;
+        }
+        Bitmap bitmap = get(view.getContext(), name, maxPixels);
+        if (bitmap == null) {
+            return false;
+        }
+        view.setImageDrawable(new BitmapDrawable(view.getResources(), bitmap));
+        return true;
     }
 
     /** 把 ImageView 换成素材；找不到素材时什么都不做。 */

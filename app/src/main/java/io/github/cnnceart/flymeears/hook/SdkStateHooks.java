@@ -49,8 +49,11 @@ public final class SdkStateHooks {
      * <p>页面重新渲染会把分段选择器设成模型值，这个程序性选中又会触发一次
      * {@code setAncSwitch}，形成「刚点降噪 → 回读还是关闭 → 又发一次关闭」的回声。
      */
-    private static final long ANC_SETTLE_MS = 1500L;
+    private static final long ANC_SETTLE_MS = 10_000L;
     private static volatile long ancCommandAt;
+    /** 用户刚下发的模式/档位；只有回读和它一致（或超时）才采纳设备值。 */
+    private static volatile int ancCommandMode = -1;
+    private static volatile int ancCommandLevel = -1;
 
     private static ClassLoader loader;
     private static volatile WeakReference<Activity> cfgActivity = new WeakReference<>(null);
@@ -75,6 +78,7 @@ public final class SdkStateHooks {
             installAnc(module);
             installEq(module);
             installExtras(module);
+            installDisconnect(module);
             installWearing(module);
             installRename(module);
             installBatteryCharging(module);
@@ -84,6 +88,7 @@ public final class SdkStateHooks {
             CodecPageHooks.install(module, loader);
             DualConnectHooks.install(module, loader);
             EqHooks.install(module, loader);
+            CardNameHooks.install(module, loader);
             installDeviceCenter(module);
             Log.i(TAG, "sdk: 宿主 SDK 伪装 Hook 已挂载");
         } catch (Throwable error) {
@@ -181,8 +186,16 @@ public final class SdkStateHooks {
             String deviceId = (String) chain.getArg(0);
             if (isOurs(deviceId)) {
                 int mode = ((Number) chain.getArg(1)).intValue();
+                if (duplicateAnc(mode)) {
+                    Log.i(TAG, "sdk: 忽略重复降噪指令 -> " + EncoSnapshot.modeName(mode));
+                    return true;
+                }
                 ancCommandAt = android.os.SystemClock.elapsedRealtime();
+                ancCommandMode = mode;
                 sendMode(chain.getThisObject(), mode);
+                // 设备中心卡片切完会立刻 generateStateModel() 再读一次，
+                // 不回写模型的话它会弹回旧档位。
+                applyOptimisticAnc(mode, 0);
                 Log.i(TAG, "sdk: 原生降噪切换 -> " + EncoSnapshot.modeName(mode));
                 return true;
             }
@@ -195,7 +208,10 @@ public final class SdkStateHooks {
             if (isOurs(deviceId)) {
                 int level = ((Number) chain.getArg(1)).intValue();
                 ancCommandAt = android.os.SystemClock.elapsedRealtime();
+                ancCommandLevel = level;
+                ancCommandMode = EncoSnapshot.MODE_ANC;
                 sendAncLevel(chain.getThisObject(), level);
+                applyOptimisticAnc(EncoSnapshot.MODE_ANC, level);
                 Log.i(TAG, "sdk: 原生降噪档位 -> " + level);
                 return true;
             }
@@ -356,6 +372,49 @@ public final class SdkStateHooks {
         });
     }
 
+    /**
+     * 用户点完降噪立刻把值写回模型，并让设备中心卡片重读。
+     *
+     * <p>卡片走 {@code IRemotePrefService.setAncSwitch → generateStateModel} 这条
+     * 同步链路：如果不先改模型，它读到的是上一档，界面就会弹回去。
+     */
+    private static void applyOptimisticAnc(int mode, int level) {
+        try {
+            Object model = Host.model();
+            if (model != null) {
+                if (mode > 0) {
+                    setField(model, mode, "c", "f4508c");
+                }
+                if (level > 0) {
+                    setField(model, level, "d", "f4509d");
+                }
+            }
+        } catch (Throwable error) {
+            Log.w(TAG, "sdk: 回写降噪状态失败", error);
+        }
+        // 不主动推卡片：推送会让插件重新设置单选项，监听器没被完全屏蔽时会再发一次指令。
+        // 卡片自己点完就显示新值，下次 generateStateModel() 也会读到刚写回的模型。
+    }
+
+    private static int lastAncMode = -1;
+    private static long lastAncModeAt;
+
+    /** 同一档位 400ms 内重复下发（单选项重设会再触发一次监听）直接丢掉。 */
+    private static boolean duplicateAnc(int mode) {
+        long now = android.os.SystemClock.elapsedRealtime();
+        boolean duplicate = mode == lastAncMode && now - lastAncModeAt < 400L;
+        lastAncMode = mode;
+        lastAncModeAt = now;
+        return duplicate;
+    }
+
+    /** 让设备中心卡片立刻重读状态（跳过 1.5s 去抖）。 */
+    static void pushCardNow() {
+        lastCardPush = 0L;
+        lastCardSignature = null;
+        pushCard();
+    }
+
     private static void sendFeature(Object wrapper, int feature, boolean on) {
         try {
             Context context = (Context) readField(wrapper, "context");
@@ -388,6 +447,29 @@ public final class SdkStateHooks {
         } catch (Throwable error) {
             Log.w(TAG, "sdk: 下发编码失败", error);
         }
+    }
+
+    /** 断开连接：详情页「断开连接」和设备中心卡片都会走到这里。 */
+    private static void installDisconnect(XposedModule module) throws Exception {
+        Class<?> wrapper = Class.forName(WRAPPER, false, loader);
+        Method method = wrapper.getDeclaredMethod("disconnectDevice", String.class);
+        module.hook(method).intercept(chain -> {
+            String deviceId = (String) chain.getArg(0);
+            if (isOurs(deviceId)) {
+                try {
+                    Context context = (Context) readField(chain.getThisObject(), "context");
+                    if (context != null) {
+                        context.sendBroadcast(new Intent(EncoIntents.ACTION_DISCONNECT)
+                                .setPackage("com.android.systemui"));
+                    }
+                } catch (Throwable error) {
+                    Log.w(TAG, "sdk: 请求断开失败", error);
+                }
+                Log.i(TAG, "sdk: 原生断开连接 -> 交给会话处理");
+                return true;
+            }
+            return chain.proceed();
+        });
     }
 
     /** 原生佩戴状态查询（0x0109 的 4/5/7 语义）。 */
@@ -617,16 +699,21 @@ public final class SdkStateHooks {
                 setField(device, name, "d", "f4500d");
             }
             setField(model, battery(), "a", "f4506a");
-            boolean ancSettling = android.os.SystemClock.elapsedRealtime() - ancCommandAt
-                    < ANC_SETTLE_MS;
             int mode = ModuleState.mode();
-            if (!ancSettling && (mode == EncoSnapshot.MODE_OFF
-                    || mode == EncoSnapshot.MODE_ANC
-                    || mode == EncoSnapshot.MODE_TRANSPARENCY)) {
-                setField(model, mode, "c", "f4508c");
-                if (mode == EncoSnapshot.MODE_ANC) {
-                    int level = ModuleState.ancLevel();
-                    setField(model, level > 0 ? level : ANC_INTENSITY_SMART, "d", "f4509d");
+            boolean confirmed = ancCommandMode < 0 || mode == ancCommandMode;
+            boolean settling = android.os.SystemClock.elapsedRealtime() - ancCommandAt
+                    < ANC_SETTLE_MS;
+            if (confirmed || !settling) {
+                // 回读和刚下发的值一致（或等待超时）才采纳设备状态，避免刚切完就被旧回读顶回去。
+                ancCommandMode = -1;
+                if (mode == EncoSnapshot.MODE_OFF
+                        || mode == EncoSnapshot.MODE_ANC
+                        || mode == EncoSnapshot.MODE_TRANSPARENCY) {
+                    setField(model, mode, "c", "f4508c");
+                    if (mode == EncoSnapshot.MODE_ANC) {
+                        int level = ModuleState.ancLevel();
+                        setField(model, level > 0 ? level : ANC_INTENSITY_SMART, "d", "f4509d");
+                    }
                 }
             }
             int eq = ModuleState.eq();
@@ -727,7 +814,10 @@ public final class SdkStateHooks {
             Object result = chain.proceed();
             // 插件刚绑定时先推一次，让它拿到电量和当前模式。
             new android.os.Handler(android.os.Looper.getMainLooper())
-                    .postDelayed(SdkStateHooks::pushCard, 600L);
+                    // 卡片每次打开都会重新注册回调；这里必须强制推一次，
+                    // 否则去重逻辑会认为"状态没变"而什么都不发，卡片就停留在
+                    // 无电量 / 未连接 / 音量不可调的初始状态。
+                    .postDelayed(SdkStateHooks::pushCardNow, 600L);
             return result;
         });
         Log.i(TAG, "sdk: 设备中心推送 Hook 已挂载");
@@ -738,17 +828,19 @@ public final class SdkStateHooks {
         if (impl == null) {
             return;
         }
-        // 插件收到回调后会重新绑定服务，可能再次触发 registerCallback；这里做去抖。
-        long now = android.os.SystemClock.elapsedRealtime();
+        // 只在状态真的变了才推：每隔几秒把同一份状态推一遍会让卡片反复重绘，
+        // 用户刚在卡片上切完降噪会被"旧值"顶回去（看起来就是回弹）。
         boolean connected = ModuleState.hasState() && ModuleState.connected();
         String signature = connected + "/" + ModuleState.mode() + "/" + ModuleState.eq() + "/"
                 + ModuleState.wearLeft() + "/" + ModuleState.wearRight() + "/"
                 + ModuleState.inBoxLeft() + "/" + ModuleState.inBoxRight() + "/"
-                + ModuleState.left() + "/" + ModuleState.right() + "/" + ModuleState.box();
-        if (now - lastCardPush < 1500L && signature.equals(lastCardSignature)) {
+                + ModuleState.left() + "/" + ModuleState.right() + "/" + ModuleState.box() + "/"
+                + ModuleState.leftCharging() + "/" + ModuleState.rightCharging() + "/"
+                + ModuleState.boxCharging() + "/" + ModuleState.codec() + "/"
+                + ModuleState.lowLatency() + "/" + ModuleState.dualConnection();
+        if (signature.equals(lastCardSignature)) {
             return;
         }
-        lastCardPush = now;
         lastCardSignature = signature;
         try {
             Object callback = readField(impl, "bcmCallback");

@@ -218,6 +218,10 @@ public final class EncoLink {
      * {@code 0x0411 01 01 01 00 12} → {@code 0x040E 03 0C + 12 组 + uid + 名称}
      * → {@code 0x0403 0B 01}。实测 {@code 0x840E 00} 表示被接受。
      */
+    /** 等待耳机回传滤波系数的状态：收到后要原样 0x0415 回填。 */
+    private volatile int pendingProfileId = -1;
+    private volatile long pendingAt;
+
     public void requestCurve(int[] nativeDb) {
         OutputStream stream = output;
         if (stream == null || !running.get()) {
@@ -235,10 +239,16 @@ public final class EncoLink {
             stream.write(OppoWireCodec.selectHearingProfile(OppoWireCodec.HEARING_PROFILE_ID));
             stream.write(OppoWireCodec.hearingCurve(bands, bands,
                     OppoWireCodec.HEARING_PROFILE_ID, name));
+            // 阈值只是参数：真正生效的滤波系数由耳机计算并回传，必须再回填 0x0415。
+            pendingProfileId = OppoWireCodec.HEARING_PROFILE_ID;
+            pendingAt = android.os.SystemClock.elapsedRealtime();
+            stream.write(OppoWireCodec.hearingFilterRequest(bands, bands,
+                    OppoWireCodec.HEARING_PROFILE_ID));
             stream.write(OppoWireCodec.featureSwitch(OppoWireCodec.FEATURE_PERSONAL_SOUND, true));
             stream.flush();
             log("已下发自定义 EQ：" + java.util.Arrays.toString(nativeDb)
-                    + " -> 6 段 " + java.util.Arrays.toString(bands) + "（" + name + "）");
+                    + " -> 6 段 " + java.util.Arrays.toString(bands) + "（" + name + "）"
+                    + "，等待滤波系数");
         } catch (IOException error) {
             log("自定义 EQ 下发失败：" + error.getClass().getSimpleName());
             closeQuietly();
@@ -332,13 +342,13 @@ public final class EncoLink {
         running.set(false);
     }
 
-    /** 连接期间每 30 秒刷新一次电量与模式，避免长期显示旧值。 */
+    /** 连接期间每 6 秒刷新一次电量/佩戴/模式；进盒、充电这类变化靠它收敛。 */
     private void startTicker() {
         stopTicker();
         Thread thread = new Thread(() -> {
             while (running.get() && socket != null) {
                 try {
-                    Thread.sleep(30_000L);
+                    Thread.sleep(6_000L);
                 } catch (InterruptedException interrupted) {
                     return;
                 }
@@ -442,6 +452,9 @@ public final class EncoLink {
     private void handle(OppoWireCodec.Frame frame) {
         log("帧 cmd=0x" + String.format(java.util.Locale.ROOT, "%04X", frame.command())
                 + " payload=" + OppoWireCodec.hex(frame.payload()));
+        if (acceptFilterBlob(frame)) {
+            return;
+        }
         if (frame.command() == 0x8114 && frame.payload().length >= 2
                 && (frame.payload()[0] & 0xFF) == 0) {
             int codec = frame.payload()[1] & 0xFF;
@@ -577,6 +590,38 @@ public final class EncoLink {
      * 解析 <status=0> <count> <component> <value>… 的组件状态表。
      * Enco X2 实测：4=在盒、5=出盒未戴、7=佩戴中（左右耳）；盒固定 4。
      */
+    /**
+     * 耳机对 0x0116 的回包就是 0x0415 要回填的滤波系数。
+     *
+     * <p>本链路里它可能以通知（0x0204 等）或 0x8416 的形式出现，结构和
+     * {@code action(1) | dataLen(LE16) | data | uid(BE)} 一致。这里按结构识别：
+     * 首字节为 3 且长度字段与总长吻合才认，避免误吃别的通知。
+     */
+    private boolean acceptFilterBlob(OppoWireCodec.Frame frame) {
+        int profile = pendingProfileId;
+        if (profile < 0
+                || android.os.SystemClock.elapsedRealtime() - pendingAt > 8000L) {
+            return false;
+        }
+        byte[] payload = frame.payload();
+        if (payload.length < 8 || (payload[0] & 0xFF) != 0x03) {
+            return false;
+        }
+        int length = (payload[1] & 0xFF) | ((payload[2] & 0xFF) << 8);
+        if (length <= 0 || payload.length != length + 7) {
+            return false;
+        }
+        byte[] data = new byte[length];
+        System.arraycopy(payload, 3, data, 0, length);
+        pendingProfileId = -1;
+        log("收到滤波系数 " + length + " 字节（cmd=0x"
+                + String.format(java.util.Locale.ROOT, "%04X", frame.command()) + "）");
+        writeQuietly(OppoWireCodec.earScanData(data, profile));
+        writeQuietly(OppoWireCodec.featureSwitch(OppoWireCodec.FEATURE_PERSONAL_SOUND, true));
+        log("已回填 0x0415 并启用黄金听感");
+        return true;
+    }
+
     /** 0x0112：多设备/双连接信息。 */
     private void parseMultiConnect(byte[] payload) {
         int count = payload[1] & 0xFF;
@@ -664,6 +709,10 @@ public final class EncoLink {
             }
             int component = payload[base] & 0xFF;
             int value = payload[base + 1] & 0xFF;
+            if (value == 0) {
+                // 0 = 该组件暂时没上报（正在充电/唤醒），保持上一次的值，别把状态刷掉。
+                continue;
+            }
             if (component == 0x01) {
                 left = value;
             } else if (component == 0x02) {

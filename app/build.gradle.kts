@@ -11,8 +11,8 @@ android {
         applicationId = (project.findProperty("appId") as String?) ?: "io.github.cnnceart.flymeears"
         minSdk = 31
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 10000
+        versionName = "1.0.0"
     }
 
     compileOptions {
@@ -28,6 +28,14 @@ android {
         // libxposed entry list and module.prop must survive resource merging.
         resources {
             merges += "META-INF/xposed/*"
+        }
+    }
+
+    buildTypes {
+        getByName("release") {
+            // LSPosed 模块没有单独的发布密钥，用 debug 签名保证可直接安装升级。
+            signingConfig = signingConfigs.getByName("debug")
+            isMinifyEnabled = false
         }
     }
 

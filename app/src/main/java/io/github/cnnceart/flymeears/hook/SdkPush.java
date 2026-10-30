@@ -157,9 +157,20 @@ final class SdkPush {
         return 1;
     }
 
+    private static long lastConnectPush;
+    private static final long CONNECT_THROTTLE_MS = 10_000L;
+
     private static void pushConnection(boolean connected) {
         cancelPendingDisconnect();
         if (connected) {
+            // 每次 RFCOMM 重连都走一遍 handleConnectedStateChanged 会让 SDK 反复弹
+            // 原生连接弹窗（它的对话框有 double-dismiss 崩溃），这里限流。
+            long now = android.os.SystemClock.elapsedRealtime();
+            if (now - lastConnectPush < CONNECT_THROTTLE_MS) {
+                Log.i(TAG, "push: 忽略重复的连接回调");
+                return;
+            }
+            lastConnectPush = now;
             Host.invoke(Host.wrapper(), "handleConnectedStateChanged", Host.deviceId(), 2);
             Log.i(TAG, "push: 连接回调 -> deviceConnectionSuccessful");
             return;
@@ -168,6 +179,8 @@ final class SdkPush {
             pendingDisconnect = null;
             if (!ModuleState.connected()) {
                 Host.invoke(Host.wrapper(), "handleConnectedStateChanged", Host.deviceId(), 0);
+                // 设备中心卡片不跟着 Activity 走，单独再推一次。
+                SdkStateHooks.pushCardNow();
                 Log.i(TAG, "push: 连接回调 -> deviceDisconnected");
             }
         };
