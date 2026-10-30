@@ -108,6 +108,9 @@ public final class EncoSession implements EncoLink.Listener {
                 main.postDelayed(this, WATCHDOG_INTERVAL);
                 return;
             }
+            if (currentAddress == null) {
+                reconcile();
+            }
             String address = currentAddress;
             if (address != null && !link.isRunning()) {
                 Log.i(TAG, "session: 补连 " + address);
