@@ -116,9 +116,12 @@ public final class PopupLauncher {
     }
 
     private static Intent baseIntent(ClassLoader loader, Object mzfpDevice) {
+        // 只用 NEW_TASK：弹窗从 SystemUI 拉起，需要独立任务；
+        // 但绝不能加 MULTIPLE_TASK —— 那样每弹一次就新开一个魅族耳机任务，
+        // 最近任务里会堆出一排「魅族耳机」卡片。
         return new Intent()
                 .setClassName(PACKAGE, ACTIVITY)
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_MULTIPLE_TASK)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 .putExtra("DIALOG_TYPE_KEY", 1)
                 .putExtra("MZFP_DEVICE_KEY", (Parcelable) mzfpDevice)
                 .putExtra("IS_CONNECTED", true);
