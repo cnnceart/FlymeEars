@@ -695,7 +695,8 @@ public final class SdkStateHooks {
         }
         // 插件收到回调后会重新绑定服务，可能再次触发 registerCallback；这里做去抖。
         long now = android.os.SystemClock.elapsedRealtime();
-        String signature = ModuleState.mode() + "/" + ModuleState.eq() + "/"
+        boolean connected = ModuleState.hasState() && ModuleState.connected();
+        String signature = connected + "/" + ModuleState.mode() + "/" + ModuleState.eq() + "/"
                 + ModuleState.wearLeft() + "/" + ModuleState.wearRight() + "/"
                 + ModuleState.inBoxLeft() + "/" + ModuleState.inBoxRight() + "/"
                 + ModuleState.left() + "/" + ModuleState.right() + "/" + ModuleState.box();
@@ -711,15 +712,23 @@ public final class SdkStateHooks {
             if (callback == null || device == null || deviceId == null) {
                 return;
             }
-            findMethod(callback.getClass(), "deviceConnectionSuccessful", 1).invoke(callback, device);
-            if (ModuleState.hasState()) {
-                findMethod(callback.getClass(), "onNoiseControlModeChanged", 2)
-                        .invoke(callback, deviceId, ModuleState.mode());
-                Object wearing = wearingStatus();
-                if (wearing != null) {
-                    findMethod(callback.getClass(), "earphoneWearingStatusChanged", 2)
-                            .invoke(callback, deviceId, wearing);
-                }
+            // 未连接时必须走 deviceDisconnected：卡片才会显示「连接」入口，
+            // 降噪按钮也才会置灰。之前无条件推 deviceConnectionSuccessful，
+            // 卡片就一直是「已连接 + 降噪点亮」的样式。
+            if (!connected) {
+                findMethod(callback.getClass(), "deviceDisconnected", 1)
+                        .invoke(callback, deviceId);
+                Log.i(TAG, "sdk: 已向设备中心推送未连接");
+                return;
+            }
+            findMethod(callback.getClass(), "deviceConnectionSuccessful", 1)
+                    .invoke(callback, device);
+            findMethod(callback.getClass(), "onNoiseControlModeChanged", 2)
+                    .invoke(callback, deviceId, ModuleState.mode());
+            Object wearing = wearingStatus();
+            if (wearing != null) {
+                findMethod(callback.getClass(), "earphoneWearingStatusChanged", 2)
+                        .invoke(callback, deviceId, wearing);
             }
             Log.i(TAG, "sdk: 已向设备中心推送状态");
         } catch (Throwable error) {
