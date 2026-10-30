@@ -12,11 +12,23 @@ public final class EncoIntents {
     /** 详情页「降噪方式」→ SystemUI：切到指定档位（魅族 17~20）。 */
     public static final String ACTION_SET_ANC_LEVEL = "io.github.cnnceart.flymeears.action.SET_ANC_LEVEL";
 
+    /** 详情页功能开关（游戏模式 / 黄金听感 / 设备双连）。 */
+    public static final String ACTION_SET_FEATURE = "io.github.cnnceart.flymeears.action.SET_FEATURE";
+
+    /** 高品质音频编码。 */
+    public static final String ACTION_SET_CODEC = "io.github.cnnceart.flymeears.action.SET_CODEC";
+
     /** SystemUI → 宿主：完整状态。 */
     public static final String ACTION_STATE = "io.github.cnnceart.flymeears.action.STATE";
 
     public static final String EXTRA_MODE = "mode";
     public static final String EXTRA_ANC_LEVEL = "anc_level";
+    public static final String EXTRA_FEATURE = "feature";
+    public static final String EXTRA_ON = "on";
+    public static final String EXTRA_CODEC = "codec";
+    public static final String EXTRA_LOW_LATENCY = "low_latency";
+    public static final String EXTRA_DUAL_CONNECTION = "dual_connection";
+    public static final String EXTRA_PERSONAL_SOUND = "personal_sound";
     public static final String EXTRA_LEFT = "left";
     public static final String EXTRA_RIGHT = "right";
     public static final String EXTRA_CASE = "case";

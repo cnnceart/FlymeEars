@@ -134,6 +134,42 @@ public final class EncoLink {
         }
     }
 
+    /** 功能开关（游戏模式 06 / 黄金听感 0B / 设备双连 11）。 */
+    public void requestFeature(int feature, boolean on) {
+        OutputStream stream = output;
+        if (stream == null || !running.get()) {
+            log("链路未就绪，无法切换功能");
+            return;
+        }
+        try {
+            stream.write(OppoWireCodec.featureSwitch(feature, on));
+            stream.flush();
+            log(String.format(java.util.Locale.ROOT,
+                    "已下发功能 0x%02X = %s", feature, on ? "开" : "关"));
+        } catch (IOException error) {
+            log("功能下发失败：" + error.getClass().getSimpleName());
+            closeQuietly();
+        }
+    }
+
+    /** 高品质音频编码。 */
+    public void requestCodec(int codec) {
+        OutputStream stream = output;
+        if (stream == null || !running.get()) {
+            log("链路未就绪，无法切换编码");
+            return;
+        }
+        try {
+            stream.write(OppoWireCodec.setCodec(codec));
+            stream.flush();
+            main.postDelayed(this::refresh, 800);
+            log(String.format(java.util.Locale.ROOT, "已下发编码 0x%02X", codec));
+        } catch (IOException error) {
+            log("编码下发失败：" + error.getClass().getSimpleName());
+            closeQuietly();
+        }
+    }
+
     /** 调试/协议探测：直接写一帧（由 OppoWireCodec 组包）。 */
     public void sendRaw(byte[] frame, String label) {
         OutputStream stream = output;

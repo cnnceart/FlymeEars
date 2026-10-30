@@ -36,6 +36,10 @@ public final class EncoSession implements EncoLink.Listener {
     private String currentName;
     private boolean popupShown;
     private volatile EncoSnapshot snapshot;
+    private volatile boolean lowLatency;
+    private volatile boolean dualConnection;
+    private volatile boolean personalSound;
+    private volatile int codecType = -1;
     /** 最近一次真实上报的电量：耳机在耳时充电盒不回报，沿用旧值比显示 -1% 好。 */
     private int lastLeft = -1;
     private int lastRight = -1;
@@ -193,6 +197,35 @@ public final class EncoSession implements EncoLink.Listener {
         link.requestAncLevel(level);
     }
 
+    /** 功能开关（06 游戏模式 / 0B 黄金听感 / 11 设备双连）。 */
+    public void requestFeature(int feature, boolean on) {
+        link.requestFeature(feature, on);
+        switch (feature) {
+            case io.github.cnnceart.flymeears.protocol.OppoWireCodec.FEATURE_GAME_MODE ->
+                    lowLatency = on;
+            case io.github.cnnceart.flymeears.protocol.OppoWireCodec.FEATURE_DUAL_CONNECTION ->
+                    dualConnection = on;
+            case io.github.cnnceart.flymeears.protocol.OppoWireCodec.FEATURE_PERSONAL_SOUND ->
+                    personalSound = on;
+            default -> {
+            }
+        }
+        EncoSnapshot value = snapshot;
+        if (value != null) {
+            broadcastState(value);
+        }
+    }
+
+    /** 高品质音频编码。 */
+    public void requestCodec(int codec) {
+        link.requestCodec(codec);
+        codecType = codec;
+        EncoSnapshot value = snapshot;
+        if (value != null) {
+            broadcastState(value);
+        }
+    }
+
     /** 查找耳机：响铃 / 停止。 */
     public void find(boolean on) {
         link.requestFind(on);
@@ -301,6 +334,12 @@ public final class EncoSession implements EncoLink.Listener {
                     .putExtra(io.github.cnnceart.flymeears.EncoIntents.EXTRA_MODE, value.mode)
                     .putExtra(io.github.cnnceart.flymeears.EncoIntents.EXTRA_ANC_LEVEL, value.ancLevel)
                     .putExtra(io.github.cnnceart.flymeears.EncoIntents.EXTRA_EQ, value.eqMode)
+                    .putExtra(io.github.cnnceart.flymeears.EncoIntents.EXTRA_LOW_LATENCY, lowLatency)
+                    .putExtra(io.github.cnnceart.flymeears.EncoIntents.EXTRA_DUAL_CONNECTION,
+                            dualConnection)
+                    .putExtra(io.github.cnnceart.flymeears.EncoIntents.EXTRA_PERSONAL_SOUND,
+                            personalSound)
+                    .putExtra(io.github.cnnceart.flymeears.EncoIntents.EXTRA_CODEC, codecType)
                     .putExtra(io.github.cnnceart.flymeears.EncoIntents.EXTRA_WEAR_LEFT,
                             value.leftStatus == 7)
                     .putExtra(io.github.cnnceart.flymeears.EncoIntents.EXTRA_WEAR_RIGHT,

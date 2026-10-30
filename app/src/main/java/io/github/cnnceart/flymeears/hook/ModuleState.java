@@ -37,6 +37,10 @@ public final class ModuleState {
     private static volatile String name;
     private static volatile int mode;
     private static volatile int ancLevel = -1;
+    private static volatile boolean lowLatency;
+    private static volatile boolean dualConnection;
+    private static volatile boolean personalSound;
+    private static volatile int codec = -1;
     private static volatile int eq = -1;
     private static volatile boolean wearLeft;
     private static volatile boolean wearRight;
@@ -84,6 +88,10 @@ public final class ModuleState {
         }
         mode = intent.getIntExtra(EncoIntents.EXTRA_MODE, 0);
         ancLevel = intent.getIntExtra(EncoIntents.EXTRA_ANC_LEVEL, -1);
+        lowLatency = intent.getBooleanExtra(EncoIntents.EXTRA_LOW_LATENCY, false);
+        dualConnection = intent.getBooleanExtra(EncoIntents.EXTRA_DUAL_CONNECTION, false);
+        personalSound = intent.getBooleanExtra(EncoIntents.EXTRA_PERSONAL_SOUND, false);
+        codec = intent.getIntExtra(EncoIntents.EXTRA_CODEC, -1);
         eq = intent.getIntExtra(EncoIntents.EXTRA_EQ, -1);
         wearLeft = intent.getBooleanExtra(EncoIntents.EXTRA_WEAR_LEFT, false);
         wearRight = intent.getBooleanExtra(EncoIntents.EXTRA_WEAR_RIGHT, false);
@@ -145,6 +153,22 @@ public final class ModuleState {
     /** 降噪档位（17 智能 / 18 深度 / 19 均衡 / 20 轻度）；-1 未知。 */
     public static int ancLevel() {
         return ancLevel;
+    }
+
+    public static boolean lowLatency() {
+        return lowLatency;
+    }
+
+    public static boolean dualConnection() {
+        return dualConnection;
+    }
+
+    public static boolean personalSound() {
+        return personalSound;
+    }
+
+    public static int codec() {
+        return codec;
     }
 
     public static int eq() {

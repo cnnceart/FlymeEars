@@ -28,6 +28,30 @@ public final class OppoWireCodec {
     public static final int NOTIFICATION_SUPPORT_RESPONSE = 0x8200;
     public static final int REGISTER_NOTIFICATIONS = 0x0205;
 
+    /** 功能开关：payload = 功能位 + 开关值（欢律实测）。 */
+    public static final int FEATURE_SWITCH = 0x0403;
+    /** 高品质音频编码：payload = 编码类型 + 00 00。 */
+    public static final int SET_CODEC = 0x041A;
+
+    public static final int FEATURE_GAME_MODE = 0x06;
+    public static final int FEATURE_PERSONAL_SOUND = 0x0B;
+    public static final int FEATURE_DUAL_CONNECTION = 0x11;
+
+    /** OPPO 编码枚举（0x041A 的取值）。 */
+    public static final int CODEC_AAC = 0x02;
+    public static final int CODEC_LDAC = 0x03;
+    public static final int CODEC_LHDC = 0x08;
+
+    /** 功能开关帧。 */
+    public static byte[] featureSwitch(int feature, boolean on) {
+        return packet(FEATURE_SWITCH, new byte[]{(byte) feature, (byte) (on ? 1 : 0)});
+    }
+
+    /** 高品质音频编码帧。 */
+    public static byte[] setCodec(int codec) {
+        return packet(SET_CODEC, new byte[]{(byte) codec, 0x00, 0x00});
+    }
+
     /** 连接后依次下发的读取命令。 */
     public static final byte[] QUERY_BATTERY_PACKET = packet(QUERY_BATTERY);
     public static final byte[] QUERY_NOTIFICATION_SUPPORT_PACKET = packet(QUERY_NOTIFICATION_SUPPORT);

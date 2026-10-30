@@ -55,6 +55,8 @@ public final class XposedInit extends XposedModule {
         filter.addAction(io.github.cnnceart.flymeears.EncoIntents.ACTION_CYCLE);
         filter.addAction(io.github.cnnceart.flymeears.EncoIntents.ACTION_SET_MODE);
         filter.addAction(io.github.cnnceart.flymeears.EncoIntents.ACTION_SET_ANC_LEVEL);
+        filter.addAction(io.github.cnnceart.flymeears.EncoIntents.ACTION_SET_FEATURE);
+        filter.addAction(io.github.cnnceart.flymeears.EncoIntents.ACTION_SET_CODEC);
         filter.addAction(io.github.cnnceart.flymeears.EncoIntents.ACTION_PROBE);
         filter.addAction(io.github.cnnceart.flymeears.EncoIntents.ACTION_SET_EQ);
         filter.addAction(io.github.cnnceart.flymeears.EncoIntents.ACTION_FIND);
@@ -121,6 +123,30 @@ public final class XposedInit extends XposedModule {
                     if (level > 0) {
                         session.requestAncLevel(level);
                         android.util.Log.i(TAG, "session: 降噪档位 " + level);
+                    }
+                    return;
+                }
+                if (io.github.cnnceart.flymeears.EncoIntents.ACTION_SET_FEATURE
+                        .equals(intent.getAction())) {
+                    int feature = intent.getIntExtra(
+                            io.github.cnnceart.flymeears.EncoIntents.EXTRA_FEATURE, -1);
+                    boolean on = intent.getBooleanExtra(
+                            io.github.cnnceart.flymeears.EncoIntents.EXTRA_ON, false);
+                    if (feature >= 0) {
+                        session.requestFeature(feature, on);
+                        android.util.Log.i(TAG, "session: 功能 0x"
+                                + Integer.toHexString(feature) + " -> " + on);
+                    }
+                    return;
+                }
+                if (io.github.cnnceart.flymeears.EncoIntents.ACTION_SET_CODEC
+                        .equals(intent.getAction())) {
+                    int codec = intent.getIntExtra(
+                            io.github.cnnceart.flymeears.EncoIntents.EXTRA_CODEC, -1);
+                    if (codec > 0) {
+                        session.requestCodec(codec);
+                        android.util.Log.i(TAG, "session: 编码 0x"
+                                + Integer.toHexString(codec));
                     }
                     return;
                 }

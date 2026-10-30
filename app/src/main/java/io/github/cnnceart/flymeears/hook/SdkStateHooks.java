@@ -69,6 +69,7 @@ public final class SdkStateHooks {
             installBattery(module);
             installAnc(module);
             installEq(module);
+            installExtras(module);
             installWearing(module);
             installRename(module);
             installBatteryCharging(module);
@@ -205,15 +206,17 @@ public final class SdkStateHooks {
             try {
                 Object device = chain.getArg(0);
                 if (result instanceof java.util.Set<?> set && isOurs(deviceId(device))) {
-                    Object feature = feature("g", "f6851g");
-                    if (feature != null) {
-                        @SuppressWarnings("unchecked")
-                        java.util.Set<Object> mutable = (java.util.Set<Object>) set;
-                        mutable.add(feature);
+                    @SuppressWarnings("unchecked")
+                    java.util.Set<Object> mutable = (java.util.Set<Object>) set;
+                    for (String name : new String[]{"g", "j", "n", "k"}) {
+                        Object feature = feature(name);
+                        if (feature != null) {
+                            mutable.add(feature);
+                        }
                     }
                 }
             } catch (Throwable error) {
-                Log.w(TAG, "sdk: 注入音效能力失败", error);
+                Log.w(TAG, "sdk: 注入能力失败", error);
             }
             return result;
         });
@@ -239,6 +242,115 @@ public final class SdkStateHooks {
             }
             return chain.proceed();
         });
+    }
+
+    /** 游戏模式 / 设备双连 / 黄金听感 / 高品质音频编码。 */
+    private static void installExtras(XposedModule module) throws Exception {
+        Class<?> wrapper = Class.forName(WRAPPER, false, loader);
+        hookFeatureSwitch(module, wrapper, "setLowLatency",
+                io.github.cnnceart.flymeears.protocol.OppoWireCodec.FEATURE_GAME_MODE);
+        hookFeatureSwitch(module, wrapper, "setMultipleConnectionEnable",
+                io.github.cnnceart.flymeears.protocol.OppoWireCodec.FEATURE_DUAL_CONNECTION);
+
+        Method activate = wrapper.getDeclaredMethod("activatePersonalSound", String.class);
+        module.hook(activate).intercept(chain -> {
+            if (isOurs((String) chain.getArg(0))) {
+                sendFeature(chain.getThisObject(),
+                        io.github.cnnceart.flymeears.protocol.OppoWireCodec.FEATURE_PERSONAL_SOUND,
+                        true);
+                Log.i(TAG, "sdk: 黄金听感 -> 开");
+                return true;
+            }
+            return chain.proceed();
+        });
+        Method deactivate = wrapper.getDeclaredMethod("deactivatePersonalSound", String.class);
+        module.hook(deactivate).intercept(chain -> {
+            if (isOurs((String) chain.getArg(0))) {
+                sendFeature(chain.getThisObject(),
+                        io.github.cnnceart.flymeears.protocol.OppoWireCodec.FEATURE_PERSONAL_SOUND,
+                        false);
+                Log.i(TAG, "sdk: 黄金听感 -> 关");
+                return true;
+            }
+            return chain.proceed();
+        });
+
+        Method highQuality = wrapper.getDeclaredMethod(
+                "setHighQualityMode", String.class, int.class);
+        module.hook(highQuality).intercept(chain -> {
+            if (isOurs((String) chain.getArg(0))) {
+                if (!ModuleState.connected()) {
+                    Log.i(TAG, "sdk: 未连接，忽略高品质音频");
+                    return null;
+                }
+                int model = ((Number) chain.getArg(1)).intValue();
+                int codec = model == 1
+                        ? io.github.cnnceart.flymeears.protocol.OppoWireCodec.CODEC_AAC
+                        : io.github.cnnceart.flymeears.protocol.OppoWireCodec.CODEC_LHDC;
+                sendCodec(chain.getThisObject(), codec);
+                Log.i(TAG, "sdk: 高品质音频 -> " + model);
+                return null;
+            }
+            return chain.proceed();
+        });
+
+        Method lhdc = wrapper.getDeclaredMethod("setLhdcAudioMode", String.class, int.class);
+        module.hook(lhdc).intercept(chain -> {
+            if (isOurs((String) chain.getArg(0))) {
+                sendCodec(chain.getThisObject(),
+                        io.github.cnnceart.flymeears.protocol.OppoWireCodec.CODEC_LHDC);
+                Log.i(TAG, "sdk: LHDC 模式 -> " + chain.getArg(1));
+                return null;
+            }
+            return chain.proceed();
+        });
+    }
+
+    private static void hookFeatureSwitch(XposedModule module, Class<?> wrapper,
+                                          String name, int feature) throws Exception {
+        Method method = wrapper.getDeclaredMethod(name, String.class, boolean.class);
+        module.hook(method).intercept(chain -> {
+            if (isOurs((String) chain.getArg(0))) {
+                if (!ModuleState.connected()) {
+                    Log.i(TAG, "sdk: 未连接，忽略 " + name);
+                    return true;
+                }
+                boolean on = (Boolean) chain.getArg(1);
+                sendFeature(chain.getThisObject(), feature, on);
+                Log.i(TAG, "sdk: " + name + " -> " + on);
+                return true;
+            }
+            return chain.proceed();
+        });
+    }
+
+    private static void sendFeature(Object wrapper, int feature, boolean on) {
+        try {
+            Context context = (Context) readField(wrapper, "context");
+            if (context == null) {
+                return;
+            }
+            context.sendBroadcast(new Intent(EncoIntents.ACTION_SET_FEATURE)
+                    .setPackage("com.android.systemui")
+                    .putExtra(EncoIntents.EXTRA_FEATURE, feature)
+                    .putExtra(EncoIntents.EXTRA_ON, on));
+        } catch (Throwable error) {
+            Log.w(TAG, "sdk: 下发功能开关失败", error);
+        }
+    }
+
+    private static void sendCodec(Object wrapper, int codec) {
+        try {
+            Context context = (Context) readField(wrapper, "context");
+            if (context == null) {
+                return;
+            }
+            context.sendBroadcast(new Intent(EncoIntents.ACTION_SET_CODEC)
+                    .setPackage("com.android.systemui")
+                    .putExtra(EncoIntents.EXTRA_CODEC, codec));
+        } catch (Throwable error) {
+            Log.w(TAG, "sdk: 下发编码失败", error);
+        }
     }
 
     /** 原生佩戴状态查询（0x0109 的 4/5/7 语义）。 */
@@ -557,6 +669,8 @@ public final class SdkStateHooks {
         cfgActivity = new WeakReference<>(null);
     }
 
+    private static volatile Boolean lastConnected;
+
     private static void refresh(Activity activity) {
         if (activity == null || activity.isFinishing() || activity.isDestroyed()) {
             return;
@@ -564,6 +678,14 @@ public final class SdkStateHooks {
         try {
             Object device = readField(activity, "device");
             if (device == null) {
+                return;
+            }
+            boolean connected = ModuleState.connected();
+            Boolean previous = lastConnected;
+            if (previous == null || previous != connected) {
+                lastConnected = connected;
+                Log.i(TAG, "sdk: 详情页连接状态 -> " + connected);
+                findMethod(activity.getClass(), "loadDeviceData", 0).invoke(activity);
                 return;
             }
             applyState(device);
@@ -604,6 +726,14 @@ public final class SdkStateHooks {
             int eq = ModuleState.eq();
             if (eq >= 0) {
                 setField(model, eq, "q", "f4519q");
+            }
+            setField(model, 1, "v", "f4524v");
+            setField(model, ModuleState.lowLatency(), "r", "f4520r");
+            int codec = ModuleState.codec();
+            if (codec == io.github.cnnceart.flymeears.protocol.OppoWireCodec.CODEC_LHDC) {
+                setField(model, 2, "o", "f4517o");
+            } else if (codec == io.github.cnnceart.flymeears.protocol.OppoWireCodec.CODEC_AAC) {
+                setField(model, 1, "o", "f4517o");
             }
             Log.i(TAG, "sdk: 状态模型 -> " + name + " / " + EncoSnapshot.modeName(mode));
         } catch (Throwable error) {
