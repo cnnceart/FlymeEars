@@ -32,6 +32,9 @@ public final class EarphonePopupHooks {
 
     private static final String TAG = "FlymeEars";
     private static final String FRAGMENT = "com.meizu.bluetooth.sdk.MzfpDeviceConnectedFragment";
+    private static final String HOST = "com.meizu.earphone";
+    private static final String CFG_ACTIVITY =
+            "com.meizu.earphone.biz.configuration.activity.CfgActivity";
 
     private EarphonePopupHooks() {
     }
@@ -145,7 +148,8 @@ public final class EarphonePopupHooks {
 
     /**
      * 原生的「功能介绍」讲的是魅族耳机的功能，对 OPPO 耳机没有意义。
-     * 改成「耳机设置」并打开本模块的设置页，让弹窗成为可用的入口。
+     * 改成「耳机设置」，直接跳到魅族耳机 App 里这副耳机自己的原生详情页
+     * （{@code CfgActivity}，靠 ARouter 从 Intent 里取 deviceId/deviceName/deviceAddress）。
      */
     private static void applyFunctionButton(Object fragment) {
         try {
@@ -156,21 +160,61 @@ public final class EarphonePopupHooks {
             target.setText("耳机设置");
             target.setOnClickListener(view -> {
                 try {
+                    String address = addressOf(fragment);
+                    String name = nameOf(fragment);
                     android.content.Intent intent = new android.content.Intent()
-                            .setClassName(io.github.cnnceart.flymeears.BuildConfig.APPLICATION_ID,
-                                    "io.github.cnnceart.flymeears.ui.MainActivity")
+                            .setClassName(HOST, CFG_ACTIVITY)
+                            .putExtra("deviceId", address)
+                            .putExtra("deviceName", name)
+                            .putExtra("deviceAddress", address)
                             .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK);
                     view.getContext().startActivity(intent);
+                    Log.i(TAG, "popup hook: 跳转原生详情页 " + address);
                     // 弹窗使命完成，收起来。
-                    android.app.Activity activity = (android.app.Activity) view.getContext();
-                    activity.finish();
+                    if (view.getContext() instanceof android.app.Activity activity) {
+                        activity.finish();
+                    }
                 } catch (Throwable error) {
-                    Log.w(TAG, "popup hook: 打开设置失败", error);
+                    Log.w(TAG, "popup hook: 打开详情页失败", error);
                 }
             });
         } catch (Throwable error) {
             Log.w(TAG, "popup hook: 改写入按钮失败", error);
         }
+    }
+
+    /** 弹窗里的设备地址：MzfpDevice 里包着 BluetoothDevice；取不到时退回会话里的地址。 */
+    private static String addressOf(Object fragment) {
+        try {
+            Object device = field(fragment.getClass(), fragment, "mMzfpDevice");
+            if (device != null) {
+                Object bluetooth = device.getClass().getMethod("getBluetoothDevice").invoke(device);
+                if (bluetooth instanceof BluetoothDevice value) {
+                    return value.getAddress();
+                }
+            }
+        } catch (Throwable ignored) {
+            // 落到会话地址。
+        }
+        String fallback = DeviceListHooks.ourAddress();
+        return fallback == null ? "" : fallback;
+    }
+
+    private static String nameOf(Object fragment) {
+        try {
+            Object device = field(fragment.getClass(), fragment, "mMzfpDevice");
+            String value = device == null ? null : deviceName(device);
+            if (value != null && !value.isEmpty()) {
+                return value;
+            }
+        } catch (Throwable ignored) {
+            // 落到缓存的名称。
+        }
+        String fallback = ModuleState.name();
+        if (fallback == null || fallback.isEmpty()) {
+            fallback = DeviceListHooks.ourName();
+        }
+        return fallback == null ? "" : fallback;
     }
 
     /**
