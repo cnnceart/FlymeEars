@@ -25,23 +25,6 @@ public final class ModuleState {
 
     private static final String TAG = "FlymeEars";
 
-    /** 远程偏好快照键：SystemUI 会话写，耳机进程冷启动时读。 */
-    public static final String PREF_WRITTEN = "st_written";
-    public static final String PREF_CONNECTED = "st_connected";
-    public static final String PREF_NAME = "st_name";
-    public static final String PREF_MODE = "st_mode";
-    public static final String PREF_EQ = "st_eq";
-    public static final String PREF_WEAR_LEFT = "st_wear_l";
-    public static final String PREF_WEAR_RIGHT = "st_wear_r";
-    public static final String PREF_IN_BOX_LEFT = "st_inbox_l";
-    public static final String PREF_IN_BOX_RIGHT = "st_inbox_r";
-    public static final String PREF_LEFT_CHARGING = "st_left_chg";
-    public static final String PREF_RIGHT_CHARGING = "st_right_chg";
-    public static final String PREF_BOX_CHARGING = "st_box_chg";
-    public static final String PREF_LEFT = "st_left";
-    public static final String PREF_RIGHT = "st_right";
-    public static final String PREF_BOX = "st_box";
-
     private static final Object LOCK = new Object();
     /** 弱引用：界面销毁后不必依赖 onDestroy 精确注销。 */
     private static final CopyOnWriteArrayList<WeakReference<Runnable>> LISTENERS =
@@ -49,7 +32,6 @@ public final class ModuleState {
     private static final Handler MAIN = new Handler(Looper.getMainLooper());
 
     private static boolean installed;
-    private static volatile boolean seeded;
     private static volatile boolean hasState;
     private static volatile boolean connected;
     private static volatile String name;
@@ -117,7 +99,6 @@ public final class ModuleState {
             name = value;
         }
         hasState = true;
-        seeded = false;
         for (WeakReference<Runnable> reference : LISTENERS) {
             Runnable listener = reference.get();
             if (listener == null) {
@@ -126,46 +107,6 @@ public final class ModuleState {
                 MAIN.post(listener);
             }
         }
-    }
-
-    /**
-     * 冷启动时先用远程偏好里的快照占位，避免详情页第一帧读到空电量。
-     *
-     * <p>快照由 SystemUI 会话写入；真正的广播到达后 {@link #update} 会覆盖它，
-     * 并把 {@link #seeded()} 复位，后续判断只认实时广播。
-     */
-    public static void seed(android.content.SharedPreferences prefs) {
-        if (prefs == null) {
-            return;
-        }
-        synchronized (LOCK) {
-            if (hasState || !prefs.getBoolean(PREF_WRITTEN, false)) {
-                return;
-            }
-            mode = prefs.getInt(PREF_MODE, 0);
-            eq = prefs.getInt(PREF_EQ, -1);
-            wearLeft = prefs.getBoolean(PREF_WEAR_LEFT, false);
-            wearRight = prefs.getBoolean(PREF_WEAR_RIGHT, false);
-            inBoxLeft = prefs.getBoolean(PREF_IN_BOX_LEFT, false);
-            inBoxRight = prefs.getBoolean(PREF_IN_BOX_RIGHT, false);
-            leftCharging = prefs.getBoolean(PREF_LEFT_CHARGING, false);
-            rightCharging = prefs.getBoolean(PREF_RIGHT_CHARGING, false);
-            boxCharging = prefs.getBoolean(PREF_BOX_CHARGING, false);
-            left = prefs.getInt(PREF_LEFT, -1);
-            right = prefs.getInt(PREF_RIGHT, -1);
-            box = prefs.getInt(PREF_BOX, -1);
-            connected = prefs.getBoolean(PREF_CONNECTED, false);
-            name = prefs.getString(PREF_NAME, null);
-            hasState = true;
-            seeded = true;
-            Log.i(TAG, "state: 预置快照 " + left + "/" + right + "/" + box
-                    + " connected=" + connected);
-        }
-    }
-
-    /** 当前状态是否只是远程偏好占位（尚无实时广播）。 */
-    public static boolean seeded() {
-        return seeded;
     }
 
     /** 注册变化回调；注册时立刻回调一次（如果已有状态）。 */

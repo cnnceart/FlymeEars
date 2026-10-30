@@ -62,11 +62,6 @@ public final class SdkStateHooks {
     public static void install(XposedModule module, ClassLoader classLoader) {
         loader = classLoader;
         try {
-            ModuleState.seed(module.getRemotePreferences("flymeears"));
-        } catch (Throwable error) {
-            Log.w(TAG, "sdk: 预置状态快照失败", error);
-        }
-        try {
             installConnected(module);
             installAddress(module);
             installCacheDevice(module);
@@ -95,11 +90,9 @@ public final class SdkStateHooks {
             String deviceId = (String) chain.getArg(0);
             if (isOurs(deviceId)) {
                 wrapperInstance = chain.getThisObject();
-                // 预置快照里的 connected 可能已过期（比如刚重启），这时以音频路由为准。
-                boolean live = ModuleState.hasState() && !ModuleState.seeded();
-                boolean connected = live
+                boolean connected = ModuleState.hasState()
                         ? ModuleState.connected()
-                        : ModuleState.connected() || audioRoutePresent(chain.getThisObject(), deviceId);
+                        : audioRoutePresent(chain.getThisObject(), deviceId);
                 Log.i(TAG, "sdk: isConnected(" + deviceId + ") -> " + connected);
                 return connected;
             }
