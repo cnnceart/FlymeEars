@@ -64,6 +64,7 @@ public final class SdkStateHooks {
         try {
             installConnected(module);
             installAddress(module);
+            installCacheDevice(module);
             installStatusModel(module);
             installBattery(module);
             installAnc(module);
@@ -107,6 +108,29 @@ public final class SdkStateHooks {
             String deviceId = (String) chain.getArg(0);
             if (isOurs(deviceId)) {
                 return DeviceListHooks.ourAddress();
+            }
+            return chain.proceed();
+        });
+    }
+
+    /**
+     * getCacheDevice：详情页/设备中心按 deviceId 回查设备实例。
+     *
+     * <p>SDK 只认自己回调过的设备，第三方耳机永远查不到，`CfgActivity` 因此走
+     * “未连接”分支。这里直接返回注入的那条 {@code AudioDevice}，让上层把它当成
+     * 一台已存在的设备，后续状态与事件都挂在这条实例上。
+     */
+    private static void installCacheDevice(XposedModule module) throws Exception {
+        Class<?> wrapper = Class.forName(WRAPPER, false, loader);
+        Method method = wrapper.getDeclaredMethod("getCacheDevice", String.class);
+        module.hook(method).intercept(chain -> {
+            String deviceId = (String) chain.getArg(0);
+            if (isOurs(deviceId)) {
+                Object injected = DeviceListHooks.injectedDevice();
+                if (injected != null) {
+                    Log.i(TAG, "sdk: getCacheDevice(" + deviceId + ") -> 注入设备");
+                    return injected;
+                }
             }
             return chain.proceed();
         });
