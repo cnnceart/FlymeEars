@@ -487,8 +487,11 @@ public final class SdkStateHooks {
     }
 
     /**
-     * 详情页存活期间跟随 SystemUI 广播刷新原生列表；
-     * 若页面先以「未连接」样式渲染，则重新走一遍原生 loadDeviceData。
+     * 详情页存活期间跟随 SystemUI 广播刷新原生列表。
+     *
+     * <p>页面首次加载完全交给原生：`isReady` 回调里会自己走
+     * refreshDeviceAddress → setupDeviceData → loadDeviceData，
+     * 设备实例由 {@link #installCacheDevice} 提供，这里只负责后续状态刷新。
      */
     private static void installCfgActivity(XposedModule module) throws Exception {
         Class<?> cfg = Class.forName(CFG_ACTIVITY, false, loader);
@@ -503,7 +506,6 @@ public final class SdkStateHooks {
             Log.i(TAG, "sdk: CfgActivity.onCreate 命中");
             if (chain.getThisObject() instanceof Activity activity) {
                 watch(activity);
-                kick(activity);
                 try {
                     registerDebugRename(activity.getApplicationContext());
                 } catch (Throwable error) {
@@ -525,35 +527,6 @@ public final class SdkStateHooks {
             }
             return result;
         });
-    }
-
-    /**
-     * 原生详情页要等 MzBluetoothService 的 onConnected 回调（isReady=true）才加载；
-     * 第三方设备永远等不到这个回调，所以这里按原生顺序主动触发一次。
-     */
-    private static void kick(Activity activity) {
-        Runnable load = () -> {
-            Log.i(TAG, "sdk: kick 详情页加载");
-            if (activity.isFinishing() || activity.isDestroyed()) {
-                return;
-            }
-            try {
-                call(activity, "refreshDeviceAddress");
-                call(activity, "setupDeviceData");
-                call(activity, "loadDeviceData");
-                Log.i(TAG, "sdk: 已主动触发原生详情页加载");
-            } catch (Throwable error) {
-                Log.w(TAG, "sdk: 触发展开失败", error);
-            }
-        };
-        android.view.View decor = activity.getWindow() == null
-                ? null : activity.getWindow().getDecorView();
-        if (decor == null) {
-            load.run();
-            return;
-        }
-        decor.postDelayed(load, 400L);
-        decor.postDelayed(load, 1600L);
     }
 
     private static void watch(Activity activity) {
@@ -595,12 +568,6 @@ public final class SdkStateHooks {
             }
             applyState(device);
             Object viewModel = call(activity, "getViewModel");
-            Object items = call(viewModel, "getItemMap");
-            boolean connectedStyle = items instanceof java.util.Map<?, ?> map && map.containsKey(1);
-            if (!connectedStyle) {
-                // 先以未连接样式渲染过：按原生逻辑重新加载一次。
-                call(activity, "loadDeviceData");
-            }
             Object model = call(device, "n");
             if (model != null) {
                 Method changed = findMethod(viewModel.getClass(), "refreshDateByChanged", 1);
