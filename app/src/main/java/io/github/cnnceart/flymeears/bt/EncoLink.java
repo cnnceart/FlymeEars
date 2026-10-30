@@ -176,23 +176,6 @@ public final class EncoLink {
         }
     }
 
-    /** 调试/协议探测：直接写一帧（由 OppoWireCodec 组包）。 */
-    public void sendRaw(byte[] frame, String label) {
-        OutputStream stream = output;
-        if (stream == null || !running.get()) {
-            log("链路未就绪，无法发送 " + label);
-            return;
-        }
-        try {
-            stream.write(frame);
-            stream.flush();
-            log("探测发送 " + label + "：" + OppoWireCodec.hex(frame));
-        } catch (IOException error) {
-            log("探测发送失败：" + error.getClass().getSimpleName());
-            closeQuietly();
-        }
-    }
-
     /** 查找耳机：0x0400 01 响铃 / 00 停止，实测均返回 0x8400 00。 */
     public void requestFind(boolean on) {
         OutputStream stream = output;
@@ -228,6 +211,40 @@ public final class EncoLink {
         }
     }
 
+    /**
+     * 自定义 EQ：先选设备内档案，再写 12 段增益曲线，最后打开黄金听感。
+     *
+     * <p>帧格式来自欢律「黄金听感」抓包（见 docs/protocol-oppo-enco.md §17）：
+     * {@code 0x0411 01 01 01 00 12} → {@code 0x040E 03 0C + 12 组 + uid + 名称}
+     * → {@code 0x0403 0B 01}。实测 {@code 0x840E 00} 表示被接受。
+     */
+    public void requestCurve(int[] nativeDb) {
+        OutputStream stream = output;
+        if (stream == null || !running.get()) {
+            log("链路未就绪，无法下发自定义 EQ");
+            return;
+        }
+        if (nativeDb == null || nativeDb.length == 0) {
+            log("自定义 EQ 曲线为空");
+            return;
+        }
+        int[] bands = io.github.cnnceart.flymeears.protocol.EqMapper.toOppoBands(nativeDb);
+        String name = new java.text.SimpleDateFormat("yyyy/MM/dd HH:mm", java.util.Locale.ROOT)
+                .format(new java.util.Date());
+        try {
+            stream.write(OppoWireCodec.selectHearingProfile(OppoWireCodec.HEARING_PROFILE_ID));
+            stream.write(OppoWireCodec.hearingCurve(bands, bands,
+                    OppoWireCodec.HEARING_PROFILE_ID, name));
+            stream.write(OppoWireCodec.featureSwitch(OppoWireCodec.FEATURE_PERSONAL_SOUND, true));
+            stream.flush();
+            log("已下发自定义 EQ：" + java.util.Arrays.toString(nativeDb)
+                    + " -> 6 段 " + java.util.Arrays.toString(bands) + "（" + name + "）");
+        } catch (IOException error) {
+            log("自定义 EQ 下发失败：" + error.getClass().getSimpleName());
+            closeQuietly();
+        }
+    }
+
     private void refreshEq() {
         OutputStream stream = output;
         if (stream == null || !running.get()) {
@@ -254,6 +271,7 @@ public final class EncoLink {
             stream.write(OppoWireCodec.packet(0x0109));
             stream.write(OppoWireCodec.packet(0x0114));
             stream.write(OppoWireCodec.packet(0x0123));
+            stream.write(OppoWireCodec.packet(0x0112));
             stream.flush();
         } catch (IOException error) {
             log("刷新失败：" + error.getClass().getSimpleName());
@@ -401,6 +419,7 @@ public final class EncoLink {
         stream.write(OppoWireCodec.packet(0x0109));
         stream.write(OppoWireCodec.packet(0x0114));
         stream.write(OppoWireCodec.packet(0x0123));
+        stream.write(OppoWireCodec.packet(0x0112));
         stream.flush();
     }
 
@@ -462,6 +481,23 @@ public final class EncoLink {
             int eq = frame.payload()[0] & 0xFF;
             log("EQ 模式变化：" + eq);
             publish(EncoSnapshot.builder(snapshot).eq(eq).build());
+            return;
+        }
+        if (frame.command() == 0x840E) {
+            int status = frame.payload().length > 0 ? frame.payload()[0] & 0xFF : -1;
+            log("自定义 EQ 曲线" + (status == 0 ? "已被耳机接受" : "被拒绝（0x"
+                    + String.format(java.util.Locale.ROOT, "%02X", status) + "）"));
+            return;
+        }
+        if (frame.command() == 0x8403) {
+            boolean ok = frame.payload().length > 0 && (frame.payload()[0] & 0xFF) == 0;
+            log("功能开关" + (ok ? "成功" : "被拒绝"));
+            return;
+        }
+        if (frame.command() == 0x8411) {
+            int status = frame.payload().length > 0 ? frame.payload()[0] & 0xFF : -1;
+            log("听力档案选择" + (status == 0 ? "成功" : "失败（0x"
+                    + String.format(java.util.Locale.ROOT, "%02X", status) + "）"));
             return;
         }
         if (frame.command() == 0x8406) {
@@ -545,6 +581,8 @@ public final class EncoLink {
     private void parseMultiConnect(byte[] payload) {
         int count = payload[1] & 0xFF;
         int offset = 2;
+        java.util.ArrayList<String> current = new java.util.ArrayList<>();
+        java.util.ArrayList<String> others = new java.util.ArrayList<>();
         for (int i = 0; i < count; i++) {
             if (offset + 6 > payload.length) {
                 break;
@@ -576,7 +614,18 @@ public final class EncoLink {
                     + " mainAudio=" + ((flags & 2) != 0)
                     + " audioActive=" + ((flags & 4) != 0)
                     + " type=" + deviceType);
+            String entry = mac.toString() + '\u0001' + name;
+            if ((flags & 1) != 0) {
+                current.add(entry);
+            } else {
+                others.add(entry);
+            }
         }
+        // 详情页「设备双连」把第一条当本机、最后一条当另一台，这里保证当前设备排第一。
+        current.addAll(others);
+        publish(EncoSnapshot.builder(snapshot)
+                .dualDevices(current.toArray(new String[0]))
+                .build());
     }
 
     /** 0x0108：左右耳按键/快捷操作表。 */

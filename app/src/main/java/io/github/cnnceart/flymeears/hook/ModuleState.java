@@ -53,6 +53,9 @@ public final class ModuleState {
     private static volatile int left = -1;
     private static volatile int right = -1;
     private static volatile int box = -1;
+    /** 0x0112 多设备表：MAC -> 名称，当前设备排第一。 */
+    private static volatile java.util.Map<String, String> dualDevices =
+            java.util.Collections.emptyMap();
 
     private ModuleState() {
     }
@@ -106,6 +109,7 @@ public final class ModuleState {
         right = intent.getIntExtra(EncoIntents.EXTRA_RIGHT, -1);
         box = intent.getIntExtra(EncoIntents.EXTRA_CASE, -1);
         connected = intent.getBooleanExtra(EncoIntents.EXTRA_CONNECTED, false);
+        dualDevices = parseDualDevices(intent.getStringArrayExtra(EncoIntents.EXTRA_DUAL_DEVICES));
         String value = intent.getStringExtra(EncoIntents.EXTRA_NAME);
         if (value != null && !value.isEmpty()) {
             name = value;
@@ -119,6 +123,24 @@ public final class ModuleState {
                 MAIN.post(listener);
             }
         }
+    }
+
+    private static java.util.Map<String, String> parseDualDevices(String[] entries) {
+        if (entries == null || entries.length == 0) {
+            return java.util.Collections.emptyMap();
+        }
+        java.util.LinkedHashMap<String, String> devices = new java.util.LinkedHashMap<>();
+        for (String entry : entries) {
+            if (entry == null) {
+                continue;
+            }
+            int split = entry.indexOf('\u0001');
+            if (split <= 0 || split + 1 >= entry.length()) {
+                continue;
+            }
+            devices.put(entry.substring(0, split), entry.substring(split + 1));
+        }
+        return devices;
     }
 
     /** 注册变化回调；注册时立刻回调一次（如果已有状态）。 */
@@ -219,6 +241,11 @@ public final class ModuleState {
 
     public static int box() {
         return box;
+    }
+
+    /** 0x0112 解析结果（只读副本）。 */
+    public static java.util.Map<String, String> dualDevices() {
+        return dualDevices;
     }
 
     public static String name() {

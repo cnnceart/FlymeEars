@@ -46,15 +46,10 @@ public final class SdkStateHooks {
 
     private static ClassLoader loader;
     private static volatile WeakReference<Activity> cfgActivity = new WeakReference<>(null);
-    private static volatile Runnable cfgListener;
-    private static volatile Runnable hqListener;
-    private static volatile WeakReference<Activity> hqActivity = new WeakReference<>(null);
-    private static volatile Activity cfgListenerOwner;
     private static volatile Object remotePrefImpl;
     private static volatile Runnable cardListener;
     private static volatile Object wrapperInstance;
     private static volatile Runnable wearListener;
-    private static boolean debugReceiverReady;
     private static long lastCardPush;
     private static String lastCardSignature;
 
@@ -78,7 +73,9 @@ public final class SdkStateHooks {
             installBatteryUnit(module);
             installWearPush(module);
             installCfgActivity(module);
-            installHighQualityPage(module);
+            CodecPageHooks.install(module, loader);
+            DualConnectHooks.install(module, loader);
+            EqHooks.install(module, loader);
             installDeviceCenter(module);
             Log.i(TAG, "sdk: 宿主 SDK 伪装 Hook 已挂载");
         } catch (Throwable error) {
@@ -287,9 +284,12 @@ public final class SdkStateHooks {
                     return null;
                 }
                 int model = ((Number) chain.getArg(1)).intValue();
-                int codec = model == 1
-                        ? io.github.cnnceart.flymeears.protocol.OppoWireCodec.CODEC_AAC
-                        : io.github.cnnceart.flymeears.protocol.OppoWireCodec.CODEC_LHDC;
+                // 原生 1=AAC / 2=LHDC；3 由模块注入的 LDAC 行使用。
+                int codec = switch (model) {
+                    case 1 -> io.github.cnnceart.flymeears.protocol.OppoWireCodec.CODEC_AAC;
+                    case 3 -> io.github.cnnceart.flymeears.protocol.OppoWireCodec.CODEC_LDAC;
+                    default -> io.github.cnnceart.flymeears.protocol.OppoWireCodec.CODEC_LHDC;
+                };
                 sendCodec(chain.getThisObject(), codec, false);
                 Log.i(TAG, "sdk: 高品质音频 -> " + model);
                 return null;
@@ -335,6 +335,10 @@ public final class SdkStateHooks {
                 }
                 boolean on = (Boolean) chain.getArg(1);
                 sendFeature(chain.getThisObject(), feature, on);
+                if (feature == io.github.cnnceart.flymeears.protocol.OppoWireCodec
+                        .FEATURE_DUAL_CONNECTION) {
+                    DualConnectHooks.onToggled(on);
+                }
                 Log.i(TAG, "sdk: " + name + " -> " + on);
                 return true;
             }
@@ -392,7 +396,7 @@ public final class SdkStateHooks {
         });
     }
 
-    /** 把佩戴状态推给宿主的回调分发器，让 BaseActivity/CfgActivity 的提示逻辑生效。 */
+    /** 应用进程起来后挂一条全局状态监听：ModuleState 一变就按 SDK 回调链推给宿主。 */
     private static void installWearPush(XposedModule module) throws Exception {
         Class<?> application = Class.forName("android.app.Application", false, loader);
         Method onCreate = application.getDeclaredMethod("onCreate");
@@ -402,13 +406,14 @@ public final class SdkStateHooks {
                 if (chain.getThisObject() instanceof android.app.Application app) {
                     ModuleState.ensure(app);
                     if (wearListener == null) {
-                        wearListener = SdkStateHooks::pushWear;
+                        // 状态一有变化就走 SDK 回调链推给宿主（连接/降噪/电量/佩戴/编码…）。
+                        wearListener = SdkPush::sync;
                         ModuleState.addListener(wearListener);
                     }
-                    registerDebugRename(app);
+
                 }
             } catch (Throwable error) {
-                Log.w(TAG, "sdk: 佩戴推送初始化失败", error);
+                Log.w(TAG, "sdk: 状态推送初始化失败", error);
             }
             return result;
         });
@@ -481,63 +486,6 @@ public final class SdkStateHooks {
                 .newInstance(title, level, charging);
     }
 
-    /** 调试用改名通道：直接调用原生 changeDeviceName，避免 adb 输入法丢字。 */
-    private static void registerDebugRename(Context app) {
-        Log.i(TAG, "sdk: registerDebugRename 调用 ready=" + debugReceiverReady);
-        if (debugReceiverReady) {
-            return;
-        }
-        try {
-            android.content.IntentFilter filter = new android.content.IntentFilter(
-                    EncoIntents.ACTION_DEBUG_RENAME);
-            app.registerReceiver(new android.content.BroadcastReceiver() {
-                @Override
-                public void onReceive(Context context, Intent intent) {
-                    String name = intent.getStringExtra(EncoIntents.EXTRA_DEBUG_NAME);
-                    Log.i(TAG, "sdk: 收到调试改名 " + name);
-                    Activity activity = cfgActivity.get();
-                    if (name == null || name.isEmpty() || activity == null) {
-                        return;
-                    }
-                    try {
-                        Method change = findMethod(activity.getClass(), "changeDeviceName", 1);
-                        change.invoke(activity, name);
-                        Log.i(TAG, "sdk: 调试改名 -> " + name);
-                    } catch (Throwable error) {
-                        Log.w(TAG, "sdk: 调试改名失败", error);
-                    }
-                }
-            }, filter, Context.RECEIVER_EXPORTED);
-            debugReceiverReady = true;
-            Log.i(TAG, "sdk: 调试改名通道已注册");
-        } catch (Throwable error) {
-            Log.w(TAG, "sdk: 注册调试改名失败", error);
-        }
-    }
-
-    private static void pushWear() {
-        try {
-            Object wrapper = wrapperInstance;
-            if (wrapper == null) {
-                wrapper = singletonWrapper();
-                wrapperInstance = wrapper;
-            }
-            if (wrapper == null) {
-                return;
-            }
-            Object callback = readField(wrapper, "callbackHandler");
-            Object status = wearingStatus();
-            String deviceId = DeviceListHooks.ourAddress();
-            if (callback == null || status == null || deviceId == null) {
-                return;
-            }
-            findMethod(callback.getClass(), "earphoneWearingStatusChanged", 2)
-                    .invoke(callback, deviceId, status);
-        } catch (Throwable error) {
-            Log.w(TAG, "sdk: 推送佩戴状态失败", error);
-        }
-    }
-
     /** 原生「重命名」：第三方设备写不进耳机，但可以完整支持 App 侧改名。 */
     private static void installRename(XposedModule module) throws Exception {
         Class<?> wrapper = Class.forName(WRAPPER, false, loader);
@@ -566,31 +514,8 @@ public final class SdkStateHooks {
         });
     }
 
-    private static Object singletonWrapper() {
-        try {
-            Class<?> companion = Class.forName(
-                    "com.meizu.earphone.audiodo.mzbluetooth.MzBluetoothWrapper$Companion",
-                    false, loader);
-            return findMethod(companion, "getInstance", 0).invoke(null);
-        } catch (Throwable error) {
-            return null;
-        }
-    }
-
     private static Object wearingStatus() {
-        try {
-            Class<?> type = Class.forName(
-                    "com.meizu.bluetooth.sdk.EarphoneWearingStatus", true, loader);
-            Object value = type.getConstructor(boolean.class, boolean.class,
-                            boolean.class, boolean.class)
-                    .newInstance(ModuleState.inBoxLeft(), ModuleState.wearLeft(),
-                            ModuleState.inBoxRight(), ModuleState.wearRight());
-            type.getMethod("setEffective", boolean.class).invoke(value, true);
-            return value;
-        } catch (Throwable error) {
-            Log.w(TAG, "sdk: 构造佩戴状态失败", error);
-            return null;
-        }
+        return Host.wearingStatus();
     }
 
     private static Object feature(String... names) throws Exception {
@@ -640,16 +565,11 @@ public final class SdkStateHooks {
             Object result = chain.proceed();
             Log.i(TAG, "sdk: CfgActivity.onCreate 命中");
             if (chain.getThisObject() instanceof Activity activity) {
-                watch(activity);
-                try {
-                    registerDebugRename(activity.getApplicationContext());
-                } catch (Throwable error) {
-                    Log.w(TAG, "sdk: 注册调试改名失败", error);
-                }
-                if (wearListener == null) {
-                    wearListener = SdkStateHooks::pushWear;
-                    ModuleState.addListener(wearListener);
-                }
+                ModuleState.ensure(activity);
+                // 页面状态完全由 SDK 回调（SdkPush）驱动，这里只保留电量充电图标的修正。
+                activity.sendBroadcast(new Intent(EncoIntents.ACTION_CYCLE)
+                        .setPackage("com.android.systemui")
+                        .putExtra(EncoIntents.EXTRA_QUERY_ONLY, true));
             }
             return result;
         });
@@ -657,128 +577,21 @@ public final class SdkStateHooks {
         Method onDestroy = findInherited(cfg, "onDestroy");
         module.hook(onDestroy).intercept(chain -> {
             Object result = chain.proceed();
-            if (chain.getThisObject() instanceof Activity activity) {
-                unwatch(activity);
+            if (chain.getThisObject() instanceof Activity activity && cfgActivity.get() == activity) {
+                cfgActivity = new WeakReference<>(null);
             }
             return result;
         });
     }
 
-    private static void watch(Activity activity) {
-        unwatch(null);
-        ModuleState.ensure(activity);
-        Runnable listener = () -> refresh(activity);
-        cfgActivity = new WeakReference<>(activity);
-        cfgListener = listener;
-        cfgListenerOwner = activity;
-        ModuleState.addListener(listener);
-        // 主动问一次当前状态，避免打开详情页时还没有任何广播。
-        activity.sendBroadcast(new Intent(EncoIntents.ACTION_CYCLE)
-                .setPackage("com.android.systemui")
-                .putExtra(EncoIntents.EXTRA_QUERY_ONLY, true));
+    /** 当前详情页（可能为 null）。 */
+    static Activity currentCfgActivity() {
+        return cfgActivity.get();
     }
 
-    private static void unwatch(Activity activity) {
-        Activity owner = cfgListenerOwner;
-        if (owner == null || (activity != null && owner != activity)) {
-            return;
-        }
-        Runnable listener = cfgListener;
-        if (listener != null) {
-            ModuleState.removeListener(listener);
-        }
-        cfgListener = null;
-        cfgListenerOwner = null;
-        cfgActivity = new WeakReference<>(null);
-    }
-
-    private static volatile Boolean lastConnected;
-
-    /** 高品质音频页是独立 Activity，停留时也要跟随状态刷新选项/开关。 */
-    private static void installHighQualityPage(XposedModule module) throws Exception {
-        Class<?> type = Class.forName(
-                "com.meizu.earphone.biz.configuration.activity.CfgHighQualityActivity",
-                false, loader);
-        Method resume = type.getDeclaredMethod("onResume");
-        module.hook(resume).intercept(chain -> {
-            Object result = chain.proceed();
-            hqActivity = new WeakReference<>((Activity) chain.getThisObject());
-            if (hqListener == null) {
-                hqListener = SdkStateHooks::refreshHighQuality;
-                ModuleState.addListener(hqListener);
-            }
-            return result;
-        });
-        Method pause = type.getDeclaredMethod("onPause");
-        module.hook(pause).intercept(chain -> {
-            Object result = chain.proceed();
-            Runnable listener = hqListener;
-            if (listener != null) {
-                ModuleState.removeListener(listener);
-                hqListener = null;
-            }
-            hqActivity = new WeakReference<>(null);
-            return result;
-        });
-    }
-
-    private static void refreshHighQuality() {
-        Activity activity = hqActivity.get();
-        if (activity == null || activity.isFinishing() || activity.isDestroyed()) {
-            return;
-        }
-        try {
-            Object device = DeviceListHooks.injectedDevice();
-            if (device == null) {
-                device = readField(activity, "device");
-            }
-            if (device == null) {
-                return;
-            }
-            applyState(device);
-            Object model = call(device, "n");
-            if (model != null) {
-                findMethod(activity.getClass(), "m", 1).invoke(activity, model);
-            }
-        } catch (Throwable error) {
-            Log.w(TAG, "sdk: 刷新高品质页失败", error);
-        }
-    }
-
-    private static void refresh(Activity activity) {
-        if (activity == null || activity.isFinishing() || activity.isDestroyed()) {
-            return;
-        }
-        try {
-            Object device = readField(activity, "device");
-            if (device == null) {
-                return;
-            }
-            boolean connected = ModuleState.connected();
-            Boolean previous = lastConnected;
-            if (previous == null || previous != connected) {
-                lastConnected = connected;
-                Log.i(TAG, "sdk: 详情页连接状态 -> " + connected);
-                findMethod(activity.getClass(), "loadDeviceData", 0).invoke(activity);
-                return;
-            }
-            applyState(device);
-            Object viewModel = call(activity, "getViewModel");
-            Object model = call(device, "n");
-            if (model != null) {
-                Method changed = findMethod(viewModel.getClass(), "refreshDateByChanged", 1);
-                changed.invoke(viewModel, model);
-                // 高品质音频页的选择态/开关由 m(model) 套用，页面停留时也要重跑。
-                try {
-                    Method apply = findMethod(activity.getClass(), "m", 1);
-                    apply.invoke(activity, model);
-                } catch (Throwable ignored) {
-                    // 其他页面没有这个方法。
-                }
-            }
-        } catch (Throwable error) {
-            Log.w(TAG, "sdk: 刷新详情页失败", error);
-        }
+    /** 供其它 Hook 复用：把 ModuleState 写进宿主的状态模型。 */
+    static void applyDeviceState(Object device) {
+        applyState(device);
     }
 
     /** 把 ModuleState 写进 AudioFunctionStatusModel。 */
@@ -815,8 +628,15 @@ public final class SdkStateHooks {
                 setField(model, 2, "o", "f4517o");
             } else if (codec == io.github.cnnceart.flymeears.protocol.OppoWireCodec.CODEC_AAC) {
                 setField(model, 1, "o", "f4517o");
+            } else if (codec == io.github.cnnceart.flymeears.protocol.OppoWireCodec.CODEC_LDAC) {
+                setField(model, 3, "o", "f4517o");
             }
             setField(model, ModuleState.hiRes() ? 18 : 17, "p", "f4518p");
+            setField(model, ModuleState.dualConnection(), "i", "f4513i");
+            java.util.Map<String, String> devices = ModuleState.dualDevices();
+            if (!devices.isEmpty()) {
+                setField(model, new java.util.LinkedHashMap<>(devices), "j", "f4514j");
+            }
             Log.i(TAG, "sdk: 状态模型 -> " + name + " / " + EncoSnapshot.modeName(mode));
         } catch (Throwable error) {
             Log.w(TAG, "sdk: 写状态模型失败", error);
@@ -824,13 +644,7 @@ public final class SdkStateHooks {
     }
 
     private static Object battery() throws Exception {
-        Class<?> type = Class.forName(BATTERY, true, loader);
-        Constructor<?> constructor = type.getConstructor(int.class, boolean.class,
-                int.class, boolean.class, int.class, boolean.class);
-        return constructor.newInstance(
-                ModuleState.box(), ModuleState.boxCharging(),
-                ModuleState.left(), ModuleState.leftCharging(),
-                ModuleState.right(), ModuleState.rightCharging());
+        return Host.battery();
     }
 
     private static void sendMode(Object wrapper, int mode) {
@@ -998,50 +812,20 @@ public final class SdkStateHooks {
         }
     }
 
-    /** jadx 的 fxxxxx 是别名，运行时字段多是单字母；两个名字都试。 */
     private static Object readField(Object target, String... names) throws Exception {
-        for (String name : names) {
-            try {
-                Field field = target.getClass().getDeclaredField(name);
-                field.setAccessible(true);
-                return field.get(target);
-            } catch (NoSuchFieldException ignored) {
-                // 继续尝试下一个名字。
-            }
-        }
-        throw new NoSuchFieldException(String.join("/", names));
+        return Host.readField(target, names);
     }
 
     private static void setField(Object target, Object value, String... names) throws Exception {
-        for (String name : names) {
-            try {
-                Field field = target.getClass().getDeclaredField(name);
-                field.setAccessible(true);
-                field.set(target, value);
-                return;
-            } catch (NoSuchFieldException ignored) {
-                // 继续尝试下一个名字。
-            }
-        }
-        throw new NoSuchFieldException(String.join("/", names));
+        Host.setField(target, value, names);
     }
 
     private static Object call(Object target, String name) throws Exception {
-        Method method = findMethod(target.getClass(), name, 0);
-        return method.invoke(target);
+        return Host.call(target, name);
     }
 
     private static Method findMethod(Class<?> type, String name, int parameters) {
-        for (Class<?> current = type; current != null && current != Object.class;
-                current = current.getSuperclass()) {
-            for (Method method : current.getDeclaredMethods()) {
-                if (method.getName().equals(name) && method.getParameterCount() == parameters) {
-                    method.setAccessible(true);
-                    return method;
-                }
-            }
-        }
-        throw new IllegalStateException("找不到方法 " + name + "/" + parameters);
+        return Host.findMethod(type, name, parameters);
     }
 
     private static Method findInherited(Class<?> type, String name) throws NoSuchMethodException {

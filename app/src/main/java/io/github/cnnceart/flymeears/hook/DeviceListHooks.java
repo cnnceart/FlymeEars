@@ -43,6 +43,11 @@ public final class DeviceListHooks {
 
     private static ClassLoader loader;
     private static SharedPreferences preferences;
+
+    /** 供其它 Hook 复用宿主 ClassLoader（Host/SdkPush 反射用）。 */
+    static ClassLoader classLoader() {
+        return loader;
+    }
     private static Object injected;
     private static volatile String resolvedAddress;
     private static volatile String resolvedName;

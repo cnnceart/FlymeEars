@@ -32,6 +32,8 @@ public final class EncoSnapshot {
     public final boolean leftCharging;
     public final boolean rightCharging;
     public final boolean caseCharging;
+    /** 0x0112 多设备表：每项 "mac\u0001name"，当前设备排第一；空数组表示还没读到。 */
+    public final String[] dualDevices;
     public final String lastError;
 
     private EncoSnapshot(Builder builder) {
@@ -51,6 +53,7 @@ public final class EncoSnapshot {
         leftCharging = builder.leftCharging;
         rightCharging = builder.rightCharging;
         caseCharging = builder.caseCharging;
+        dualDevices = builder.dualDevices;
         lastError = builder.lastError;
     }
 
@@ -112,6 +115,7 @@ public final class EncoSnapshot {
         boolean leftCharging;
         boolean rightCharging;
         boolean caseCharging;
+        String[] dualDevices = new String[0];
         String lastError;
 
         private Builder(EncoSnapshot source) {
@@ -132,6 +136,7 @@ public final class EncoSnapshot {
                 leftCharging = source.leftCharging;
                 rightCharging = source.rightCharging;
                 caseCharging = source.caseCharging;
+                dualDevices = source.dualDevices;
                 lastError = source.lastError;
             }
         }
@@ -191,6 +196,11 @@ public final class EncoSnapshot {
         public Builder caseBattery(int percent, boolean charging) {
             caseBattery = percent;
             caseCharging = charging;
+            return this;
+        }
+
+        public Builder dualDevices(String[] value) {
+            dualDevices = value == null ? new String[0] : value;
             return this;
         }
 

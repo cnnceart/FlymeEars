@@ -33,6 +33,15 @@ public final class OppoWireCodec {
     /** 高品质音频编码：payload = 编码类型 + 00 00。 */
     public static final int SET_CODEC = 0x041A;
 
+    /** 黄金听感 / 自定义曲线：0x0411 选设备内档案，0x040E 写 12 段增益。 */
+    public static final int SET_EAR_RESTORE = 0x0411;
+    public static final int SET_HEARING_CURVE = 0x040E;
+    /** 欢律「黄金听感」抓包里的 restoreDesId。 */
+    public static final int HEARING_PROFILE_ID = 0x12;
+    /** 设备可选增益档位（dB，实测 12 档，见 docs/protocol-oppo-enco.md）。 */
+    private static final int[] HEARING_STEPS =
+            {-55, -49, -41, -35, -25, -19, -11, -5, 3, 7, 13, 17};
+
     public static final int FEATURE_GAME_MODE = 0x06;
     public static final int FEATURE_PERSONAL_SOUND = 0x0B;
     public static final int FEATURE_DUAL_CONNECTION = 0x11;
@@ -55,6 +64,65 @@ public final class OppoWireCodec {
     /** 高品质音频编码帧；第二个字节是 Hi-Res 开关。 */
     public static byte[] setCodec(int codec, boolean hiRes) {
         return packet(SET_CODEC, new byte[]{(byte) codec, (byte) (hiRes ? 1 : 0), 0x00});
+    }
+
+    /**
+     * 选中设备内保存的听力档案。
+     *
+     * <p>实测 {@code 01 01 01 00 12}：count=1、type=1、长度=1、档案号 0x12，
+     * 设备回 {@code 0x8411 00}。欢律在写曲线前都会先发这一帧。
+     */
+    public static byte[] selectHearingProfile(int profileId) {
+        require(profileId >= 0 && profileId <= 0xFF, "profile out of range");
+        return packet(SET_EAR_RESTORE, new byte[]{0x01, 0x01, 0x01, 0x00, (byte) profileId});
+    }
+
+    /**
+     * 写 12 段增益曲线（左 6 段 + 右 6 段）。
+     *
+     * <p>实测格式：{@code 03 0C} + 12 组 {@code (通道, 频段, 增益)} + 4 字节档案号（BE）
+     * + 档案名（UTF-8，无长度前缀）。通道 1=左、2=右；增益是 8 位有符号 dB，
+     * 只接受 {@link #hearStep} 里的 12 个档位。
+     */
+    public static byte[] hearingCurve(int[] leftDb, int[] rightDb, int profileId, String name) {
+        require(leftDb.length == rightDb.length, "channel length mismatch");
+        int bands = leftDb.length;
+        byte[] label = (name == null ? "" : name)
+                .getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        byte[] payload = new byte[2 + bands * 6 + 4 + label.length];
+        payload[0] = 0x03;                       // actionType = 保存并应用
+        payload[1] = (byte) (bands * 2);         // 组数 = 2 通道 × 段数
+        int offset = 2;
+        for (int band = 0; band < bands; band++) {
+            payload[offset++] = 0x01;            // 左声道
+            payload[offset++] = (byte) (band + 1);
+            payload[offset++] = (byte) hearStep(leftDb[band]);
+        }
+        for (int band = 0; band < bands; band++) {
+            payload[offset++] = 0x02;            // 右声道
+            payload[offset++] = (byte) (band + 1);
+            payload[offset++] = (byte) hearStep(rightDb[band]);
+        }
+        payload[offset++] = (byte) ((profileId >>> 24) & 0xFF);
+        payload[offset++] = (byte) ((profileId >>> 16) & 0xFF);
+        payload[offset++] = (byte) ((profileId >>> 8) & 0xFF);
+        payload[offset] = (byte) (profileId & 0xFF);
+        System.arraycopy(label, 0, payload, offset + 1, label.length);
+        return packet(SET_HEARING_CURVE, payload);
+    }
+
+    /** 把任意 dB 值吸附到设备支持的 12 个档位。 */
+    public static int hearStep(int db) {
+        int best = HEARING_STEPS[0];
+        int bestDistance = Math.abs(db - best);
+        for (int step : HEARING_STEPS) {
+            int distance = Math.abs(db - step);
+            if (distance < bestDistance) {
+                best = step;
+                bestDistance = distance;
+            }
+        }
+        return best;
     }
 
     /** 连接后依次下发的读取命令。 */

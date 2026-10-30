@@ -41,6 +41,11 @@ public final class EncoIntents {
 
     public static final String EXTRA_EQ = "eq";
 
+    /** 「自定义 EQ」页 → SystemUI：下发 10 段增益曲线（0x0411 + 0x040E）。 */
+    public static final String ACTION_SET_CURVE = "io.github.cnnceart.flymeears.action.SET_CURVE";
+    /** 10 段增益，单位 dB，顺序同 EqualizerView 的频点。 */
+    public static final String EXTRA_CURVE = "curve";
+
     /** 充电状态（bit7 语义，独立布尔值）。 */
     public static final String EXTRA_LEFT_CHARGING = "left_charging";
     public static final String EXTRA_RIGHT_CHARGING = "right_charging";
@@ -52,24 +57,11 @@ public final class EncoIntents {
     public static final String EXTRA_IN_BOX_LEFT = "inbox_left";
     public static final String EXTRA_IN_BOX_RIGHT = "inbox_right";
 
+    /** 0x0112 多设备表：每项 "mac\u0001name"，当前设备排第一。 */
+    public static final String EXTRA_DUAL_DEVICES = "dual_devices";
+
     /** 只要求回推当前状态，不要切换模式（详情页打开时用）。 */
     public static final String EXTRA_QUERY_ONLY = "query_only";
-
-    /** 调试：用当前快照拉起原生连接弹窗。 */
-    public static final String ACTION_SHOW_POPUP = "io.github.cnnceart.flymeears.action.SHOW_POPUP";
-
-    /** 查找耳机：让耳机响铃 / 停止。 */
-    public static final String ACTION_FIND = "io.github.cnnceart.flymeears.action.FIND";
-    public static final String EXTRA_FIND_ON = "find_on";
-
-    /** 调试：通过原生 changeDeviceName 改名（输入法不可靠时用）。 */
-    public static final String ACTION_DEBUG_RENAME = "io.github.cnnceart.flymeears.action.DEBUG_RENAME";
-    public static final String EXTRA_DEBUG_NAME = "debug_name";
-
-    /** 调试：向耳机发送一条任意命令（协议探测用）。 */
-    public static final String ACTION_PROBE = "io.github.cnnceart.flymeears.action.PROBE";
-    public static final String EXTRA_PROBE_CMD = "cmd";
-    public static final String EXTRA_PROBE_PAYLOAD = "payload";
 
     private EncoIntents() {
     }

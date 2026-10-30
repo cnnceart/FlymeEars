@@ -45,6 +45,8 @@ public final class EncoSession implements EncoLink.Listener {
     private int lastLeft = -1;
     private int lastRight = -1;
     private int lastCase = -1;
+    /** 0x0112 多设备表，断开后仍保留，避免双连页被刷空。 */
+    private volatile String[] dualDevices = new String[0];
 
     private EncoSession(Context context) {
         this.context = context;
@@ -73,6 +75,7 @@ public final class EncoSession implements EncoLink.Listener {
             }
         }
         local.loadLastBattery();
+        local.loadFlags();
         local.attach();
     }
 
@@ -108,11 +111,6 @@ public final class EncoSession implements EncoLink.Listener {
     private final Runnable watchdog = new Runnable() {
         @Override
         public void run() {
-            if (paused()) {
-                releaseForPause();
-                main.postDelayed(this, WATCHDOG_INTERVAL);
-                return;
-            }
             if (currentAddress == null) {
                 reconcile();
             }
@@ -124,35 +122,6 @@ public final class EncoSession implements EncoLink.Listener {
             main.postDelayed(this, WATCHDOG_INTERVAL);
         }
     };
-
-    /**
-     * 调试开关：{@code debug.flymeears.pause=1} 时让出 RFCOMM。
-     *
-     * <p>抓欢律（com.heytap.headset）的协议帧时用：官方 App 和本模块都会抢占
-     * 耳机唯一的 RFCOMM 连接，暂停本会话后官方 App 才能稳定连上。
-     */
-    private static boolean paused() {
-        try {
-            Class<?> props = Class.forName("android.os.SystemProperties");
-            Object value = props.getMethod("get", String.class, String.class)
-                    .invoke(null, "debug.flymeears.pause", "0");
-            return "1".equals(value);
-        } catch (Throwable ignored) {
-            return false;
-        }
-    }
-
-    private void releaseForPause() {
-        if (currentAddress == null && !link.isRunning()) {
-            return;
-        }
-        Log.i(TAG, "session: 调试暂停，释放 RFCOMM");
-        broadcastDisconnected();
-        currentAddress = null;
-        popupShown = false;
-        link.stop();
-        snapshot = null;
-    }
 
     private static final long WATCHDOG_INTERVAL = 20_000L;
 
@@ -181,13 +150,6 @@ public final class EncoSession implements EncoLink.Listener {
         link.requestMode(next);
     }
 
-    /** 协议探测：发送任意命令并打印回包（仅调试用）。 */
-    public void probe(int command, byte[] payload) {
-        byte[] frame = io.github.cnnceart.flymeears.protocol.OppoWireCodec.packet(command,
-                0xF0, payload == null ? new byte[0] : payload);
-        link.sendRaw(frame, String.format(java.util.Locale.ROOT, "0x%04X", command));
-    }
-
     /** 详情页点选具体模式时使用。 */
     public void requestMode(int mode) {
         link.requestMode(mode);
@@ -211,6 +173,7 @@ public final class EncoSession implements EncoLink.Listener {
             default -> {
             }
         }
+        saveFlags();
         EncoSnapshot value = snapshot;
         if (value != null) {
             broadcastState(value);
@@ -227,20 +190,27 @@ public final class EncoSession implements EncoLink.Listener {
         link.requestCodec(codec, hiResOn);
         codecType = codec;
         hiRes = hiResOn;
+        saveFlags();
         EncoSnapshot value = snapshot;
         if (value != null) {
             broadcastState(value);
         }
     }
 
-    /** 查找耳机：响铃 / 停止。 */
-    public void find(boolean on) {
-        link.requestFind(on);
-    }
-
     /** 详情页「音效」行设置 EQ 模式。 */
     public void setEq(int mode) {
         link.requestEq(mode);
+    }
+
+    /** 「自定义 EQ」页下发 10 段增益曲线。 */
+    public void setCurve(int[] configs) {
+        link.requestCurve(configs);
+        personalSound = true;
+        saveFlags();
+        EncoSnapshot value = snapshot;
+        if (value != null) {
+            broadcastState(value);
+        }
     }
 
     /**
@@ -312,6 +282,37 @@ public final class EncoSession implements EncoLink.Listener {
         }
     }
 
+    /**
+     * 功能开关是耳机侧持久化的，SystemUI 重启后模块也要记住，
+     * 否则页面会显示成关闭（耳机实际仍开着）。
+     */
+    private void loadFlags() {
+        try {
+            android.content.SharedPreferences prefs = batteryPrefs();
+            dualConnection = prefs.getBoolean("dual_connection", false);
+            lowLatency = prefs.getBoolean("low_latency", false);
+            personalSound = prefs.getBoolean("personal_sound", false);
+            codecType = prefs.getInt("codec", -1);
+            hiRes = prefs.getBoolean("hi_res", false);
+        } catch (Throwable error) {
+            Log.w(TAG, "session: 读取开关缓存失败", error);
+        }
+    }
+
+    private void saveFlags() {
+        try {
+            batteryPrefs().edit()
+                    .putBoolean("dual_connection", dualConnection)
+                    .putBoolean("low_latency", lowLatency)
+                    .putBoolean("personal_sound", personalSound)
+                    .putInt("codec", codecType)
+                    .putBoolean("hi_res", hiRes)
+                    .apply();
+        } catch (Throwable error) {
+            Log.w(TAG, "session: 保存开关缓存失败", error);
+        }
+    }
+
     private void saveLastBattery() {
         try {
             batteryPrefs().edit()
@@ -325,6 +326,9 @@ public final class EncoSession implements EncoLink.Listener {
     }
 
     private void broadcastState(EncoSnapshot value) {
+        if (value.dualDevices.length > 0) {
+            dualDevices = value.dualDevices;
+        }
         if (value.leftBattery >= 0) {
             lastLeft = value.leftBattery;
         }
@@ -367,7 +371,9 @@ public final class EncoSession implements EncoLink.Listener {
                     .putExtra(io.github.cnnceart.flymeears.EncoIntents.EXTRA_RIGHT, lastRight)
                     .putExtra(io.github.cnnceart.flymeears.EncoIntents.EXTRA_CASE, lastCase)
                     .putExtra(io.github.cnnceart.flymeears.EncoIntents.EXTRA_CONNECTED, value.connected)
-                    .putExtra(io.github.cnnceart.flymeears.EncoIntents.EXTRA_NAME, currentName);
+                    .putExtra(io.github.cnnceart.flymeears.EncoIntents.EXTRA_NAME, currentName)
+                    .putExtra(io.github.cnnceart.flymeears.EncoIntents.EXTRA_DUAL_DEVICES,
+                            dualDevices);
             context.sendBroadcast(new android.content.Intent(state).setPackage("com.meizu.earphone"));
             context.sendBroadcast(new android.content.Intent(state)
                     .setPackage(io.github.cnnceart.flymeears.BuildConfig.APPLICATION_ID));
@@ -385,29 +391,23 @@ public final class EncoSession implements EncoLink.Listener {
                     .putExtra(io.github.cnnceart.flymeears.EncoIntents.EXTRA_LEFT, lastLeft)
                     .putExtra(io.github.cnnceart.flymeears.EncoIntents.EXTRA_RIGHT, lastRight)
                     .putExtra(io.github.cnnceart.flymeears.EncoIntents.EXTRA_CASE, lastCase)
-                    .putExtra(io.github.cnnceart.flymeears.EncoIntents.EXTRA_NAME, currentName);
+                    .putExtra(io.github.cnnceart.flymeears.EncoIntents.EXTRA_NAME, currentName)
+                    .putExtra(io.github.cnnceart.flymeears.EncoIntents.EXTRA_DUAL_DEVICES,
+                            dualDevices)
+                    // 断开时这些开关仍要保持：耳机重启回来前页面不该被刷回默认值。
+                    .putExtra(io.github.cnnceart.flymeears.EncoIntents.EXTRA_LOW_LATENCY, lowLatency)
+                    .putExtra(io.github.cnnceart.flymeears.EncoIntents.EXTRA_DUAL_CONNECTION,
+                            dualConnection)
+                    .putExtra(io.github.cnnceart.flymeears.EncoIntents.EXTRA_PERSONAL_SOUND,
+                            personalSound)
+                    .putExtra(io.github.cnnceart.flymeears.EncoIntents.EXTRA_CODEC, codecType)
+                    .putExtra(io.github.cnnceart.flymeears.EncoIntents.EXTRA_HI_RES, hiRes);
             context.sendBroadcast(new android.content.Intent(state).setPackage("com.meizu.earphone"));
             context.sendBroadcast(new android.content.Intent(state)
                     .setPackage(io.github.cnnceart.flymeears.BuildConfig.APPLICATION_ID));
         } catch (Throwable error) {
             Log.w(TAG, "session: 广播断开失败", error);
         }
-    }
-
-    /** 调试：用当前快照立刻拉起原生弹窗。 */
-    public void showPopupNow() {
-        EncoSnapshot value = snapshot;
-        if (value == null) {
-            Log.w(TAG, "session: 没有快照，无法弹窗");
-            return;
-        }
-        BluetoothDevice device = device(value.address);
-        if (device == null) {
-            return;
-        }
-        main.post(() -> PopupLauncher.show(context, device, value.leftBattery,
-                value.rightBattery, value.caseBattery, value.leftCharging,
-                value.rightCharging, value.caseCharging));
     }
 
     private static boolean looksLikeEnco(String name) {
@@ -442,6 +442,10 @@ public final class EncoSession implements EncoLink.Listener {
     @Override
     public void onSnapshot(EncoSnapshot value) {
         snapshot = value;
+        if (value.codecType >= 0 && value.codecType != codecType) {
+            codecType = value.codecType;
+            saveFlags();
+        }
         broadcastState(value);
         if (popupShown || !value.connected || !value.protocolReady || !value.hasBattery()) {
             return;
