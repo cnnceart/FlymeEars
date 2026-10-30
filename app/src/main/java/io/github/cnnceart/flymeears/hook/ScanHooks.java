@@ -1,8 +1,6 @@
 package io.github.cnnceart.flymeears.hook;
 
 import android.app.Activity;
-import android.content.Context;
-import android.content.Intent;
 import android.util.Log;
 
 import java.lang.reflect.Field;
@@ -19,9 +17,11 @@ import io.github.libxposed.api.XposedModule;
  * ViewModel 的设备列表并发一条 {@code DeviceDiscovered} 事件，原生适配器、雷达
  * 隐藏、提示文案都会照常工作。
  *
- * <p>点「连接」时 SDK 不认识第三方设备，所以拦截
- * {@code MzBluetoothWrapper.connectToDevice}，直接打开原生设备详情页
- * （CfgActivity），详情页里有我们注入的电量/降噪面板。
+ * <p>点「连接」时 SDK 不认识第三方设备。这里不再自己跳详情页，而是让
+ * {@code connectToDevice} 直接返回成功，并按原生顺序驱动连接状态机：
+ * 先 {@code handleConnectedStateChanged(deviceId, 1)}（连接中），
+ * 再 {@code handleConnectedStateChanged(deviceId, 2)}（已连接）。
+ * 扫描页、连接中页、成功页、详情页全部由原生代码自己流转。
  */
 public final class ScanHooks {
 
@@ -32,8 +32,6 @@ public final class ScanHooks {
     private static final String EVENT = "l6.g";
     private static final String WRAPPER =
             "com.meizu.earphone.audiodo.mzbluetooth.MzBluetoothWrapper";
-    private static final String CFG_ACTIVITY =
-            "com.meizu.earphone.biz.configuration.activity.CfgActivity";
 
     private ScanHooks() {
     }
@@ -77,12 +75,12 @@ public final class ScanHooks {
                     String deviceId = (String) chain.getArg(0);
                     String ours = DeviceListHooks.ourAddress();
                     if (ours != null && ours.equalsIgnoreCase(deviceId)) {
-                        openDetail(chain.getThisObject());
-                        Log.i(TAG, "scan: 第三方设备跳过 SDK，直接打开详情页");
+                        simulateConnect(chain.getThisObject(), deviceId);
+                        Log.i(TAG, "scan: 第三方设备交给原生连接状态机 " + deviceId);
                         return true;
                     }
                 } catch (Throwable error) {
-                    Log.w(TAG, "scan: 打开详情页失败", error);
+                    Log.w(TAG, "scan: 模拟连接失败", error);
                 }
                 return chain.proceed();
             });
@@ -129,19 +127,28 @@ public final class ScanHooks {
         Log.i(TAG, "scan: 已注入扫描结果 " + name + "（" + address + "）");
     }
 
-    /** 从 SDK 包装器里取应用上下文，直接拉起原生 CfgActivity。 */
-    private static void openDetail(Object wrapper) throws Exception {
-        Object value = readField(wrapper, "context");
-        if (!(value instanceof Context context)) {
-            return;
+    /**
+     * 驱动原生连接状态机：先「连接中」，再「已连接」。
+     *
+     * <p>{@code handleConnectedStateChanged} 是 SDK 回调进入原生 UI 的入口，
+     * 这里按原生时序各调一次，扫描页/连接中页/成功页会自己完成跳转。
+     */
+    private static void simulateConnect(Object wrapper, String deviceId) throws Exception {
+        Method handle = wrapper.getClass().getDeclaredMethod(
+                "handleConnectedStateChanged", String.class, int.class);
+        handle.setAccessible(true);
+        android.os.Handler main = new android.os.Handler(android.os.Looper.getMainLooper());
+        main.post(() -> invoke(handle, wrapper, deviceId, 1));
+        main.postDelayed(() -> invoke(handle, wrapper, deviceId, 2), 900L);
+    }
+
+    private static void invoke(Method handle, Object wrapper, String deviceId, int state) {
+        try {
+            handle.invoke(wrapper, deviceId, state);
+            Log.i(TAG, "scan: 连接状态 -> " + state);
+        } catch (Throwable error) {
+            Log.w(TAG, "scan: 连接状态 " + state + " 失败", error);
         }
-        Intent intent = new Intent();
-        intent.setClassName(context.getPackageName(), CFG_ACTIVITY);
-        intent.putExtra("deviceId", DeviceListHooks.ourAddress());
-        intent.putExtra("deviceName", DeviceListHooks.ourName());
-        intent.putExtra("showBackButton", true);
-        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-        context.startActivity(intent);
     }
 
     private static Method findMethod(Class<?> type, String name, int parameters) {
